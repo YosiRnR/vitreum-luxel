@@ -1,0 +1,12 @@
+# Carpetas de compilación de CMake
+out/
+build/
+.vs/
+
+# Binarios y objetos compilados
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.lib
+*.exp
