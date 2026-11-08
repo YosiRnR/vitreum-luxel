@@ -2,14 +2,26 @@ cmake_minimum_required(VERSION 3.21)
 
 project(luxel LANGUAGES CXX)
 
-add_library(luxel STATIC
-    
-)
+find_package(Vulkan REQUIRED)
 
-target_include_directories(vitreum
+add_library(luxel STATIC
+    "src/backends/vulkan/vulkan_context.cpp"
+    "src/backends/vulkan/vulkan_platform.cpp"
+    "src/backends/vulkan/vulkan_surface.cpp"
+    "include/luxel/luxel.h"
+    "include/luxel/device.h"
+    "src/device.cpp"
+    "src/backends/vulkan/vulkan_device.h"
+    "src/backends/vulkan/vulkan_device.cpp")
+
+target_include_directories(luxel
     PUBLIC
+        include
+    PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
+
+target_link_libraries(luxel PRIVATE Vulkan::Vulkan)
 
 target_compile_features(luxel PUBLIC cxx_std_20)
 

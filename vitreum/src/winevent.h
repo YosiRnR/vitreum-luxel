@@ -56,8 +56,8 @@ namespace vitreum
 	};
 	enum class MouseModifier : uint32_t
 	{
-		None = 0, Control = 1 << 1, LeftButton = 1 << 2, MiddleButton = 1 << 3, RigthButton = 1 << 4,
-		Shift = 1 << 5, XButton1 = 1 << 6, XButton2 = 1 << 7
+		None = 0, Control = 1 << 0, LeftButton = 1 << 1, MiddleButton = 1 << 2, RightButton = 1 << 3,
+		Shift = 1 << 4, XButton1 = 1 << 5, XButton2 = 1 << 6
 	};
 
 	struct KeyEvent
@@ -102,9 +102,6 @@ namespace vitreum
 
 	struct FocusEvent
 	{
-		int dpi_x{};
-		int dpi_y{};
-		Rect suggested_rect{};
 	};
 
 	struct DpiEvent

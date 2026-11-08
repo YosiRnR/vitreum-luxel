@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <cstdint>
+#include <optional>
 #include <string_view>
 
 #if defined(_WIN32)
@@ -12,6 +13,7 @@
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#include <commdlg.h>
 
 #pragma comment(lib, "comdlg32.lib")
 
@@ -20,6 +22,12 @@ namespace vitreum
 	static KeyCode TranslateVirtualKey(int virtual_key_code, LPARAM lparam);
 	static uint32_t GetCurrentModifiers();
     static uint32_t GetCurrentMouseModifiers(WPARAM wparam);
+
+    static bool message_box_okcancel(NativeWindowHandle native_handle, const std::string& messaeg, const std::string& caption)
+    {
+        auto result = MessageBoxW(static_cast<HWND>(native_handle.win32.hwnd), std::wstring(messaeg.begin(), messaeg.end()).data(), std::wstring(caption.begin(), caption.end()).data(), MB_OKCANCEL);
+        return result == IDOK ? true : false;
+    }
 
 	namespace
 	{
@@ -68,7 +76,7 @@ namespace vitreum
 
         WindowDescriptor window_desc;
         HINSTANCE        hinstance{ nullptr };
-        WNDCLASSEX       wnd_classex{};
+        WNDCLASSEXW      wnd_classex{};
         HWND             hwnd{ nullptr };
 
         bool should_close{ false };
@@ -86,6 +94,11 @@ namespace vitreum
         // Útil para el modo Disabled (recentrar)
         int last_cursor_x{ 0 };
         int last_cursor_y{ 0 };
+
+        // Para poder restaurar al salir de m_fullscreen
+        uint32_t m_saved_style{ 0 };
+        uint32_t m_saved_exstyle{ 0 };
+        Rect m_saved_rect{};
 	};
 
     Window::Window() : m_pimpl(std::make_unique<Impl>()) { m_pimpl->owner = this; }
@@ -111,7 +124,7 @@ namespace vitreum
         RECT target_rect{ 0, 0, wd.size.width, wd.size.height };
         AdjustWindowRect(&target_rect, WS_OVERLAPPEDWINDOW, false);
 
-        m_pimpl->hwnd = CreateWindowEx(
+        m_pimpl->hwnd = CreateWindowExW(
             0,
             m_pimpl->wnd_classex.lpszClassName,
             std::wstring(wd.title.begin(), wd.title.end()).c_str(),
@@ -134,6 +147,16 @@ namespace vitreum
         return true;
     }
 
+    NativeWindowHandle Window::native_handle() const {
+        return {
+            .platform = NativePlatform::Win32,
+            .win32 {
+                .hwnd = static_cast<void*>(m_pimpl->hwnd),
+                .hinstance = static_cast<void*>(m_pimpl->hinstance)
+            }
+        };
+    }
+
     void Window::show() const {
         ShowWindow(m_pimpl->hwnd, SW_SHOW);
     }
@@ -142,7 +165,7 @@ namespace vitreum
         return m_pimpl->should_close;
     }
 
-    void Window::set_confirm_close(bool close) {
+    void Window::cancel_close(bool close) {
         m_pimpl->should_close = close;
     }
 
@@ -185,7 +208,7 @@ namespace vitreum
         m_pimpl->frame_events.swap(m_pimpl->accumulated_events);
     }
 
-    bool Window::has_pending_events()
+    bool Window::has_pending_events() const
     {
         if (m_pimpl->event_index >= m_pimpl->frame_events.size()) {
             return false;
@@ -196,7 +219,7 @@ namespace vitreum
 
     bool Window::pop_event(WinEvent& out_event)
     {
-        if (m_pimpl->frame_events.empty()) {
+        if (m_pimpl->event_index >= m_pimpl->frame_events.size()) {
             return false;
         }
         out_event = m_pimpl->frame_events[m_pimpl->event_index++];
@@ -214,12 +237,12 @@ namespace vitreum
         return std::nullopt;
     }
 
-    std::span<const WinEvent> Window::frame_events() {
+    std::span<const WinEvent> Window::frame_events() const {
         return m_pimpl->frame_events;
     }
 
     void Window::set_title(std::string_view title) {
-        SetWindowText(m_pimpl->hwnd, std::wstring(title.begin(), title.end()).data());
+        SetWindowTextW(m_pimpl->hwnd, std::wstring(title.begin(), title.end()).data());
     }
 
     void Window::set_size(Size size)
@@ -246,18 +269,18 @@ namespace vitreum
         if (enable)
         {
             // Guardar estado
-            m_saved_style   = static_cast<uint32_t>(GetWindowLong(hwnd, GWL_STYLE));
-            m_saved_exstyle = static_cast<uint32_t>(GetWindowLong(hwnd, GWL_EXSTYLE));
+            m_pimpl->m_saved_style   = static_cast<uint32_t>(GetWindowLong(hwnd, GWL_STYLE));
+            m_pimpl->m_saved_exstyle = static_cast<uint32_t>(GetWindowLong(hwnd, GWL_EXSTYLE));
             RECT win_rect{};
             GetWindowRect(hwnd, &win_rect);
-            m_saved_rect.left = win_rect.left;
-            m_saved_rect.right = win_rect.right;
-            m_saved_rect.top = win_rect.top;
-            m_saved_rect.bottom = win_rect.bottom;
+            m_pimpl->m_saved_rect.left   = win_rect.left;
+            m_pimpl->m_saved_rect.right  = win_rect.right;
+            m_pimpl->m_saved_rect.top    = win_rect.top;
+            m_pimpl->m_saved_rect.bottom = win_rect.bottom;
 
             // Quitar borde y título
-            SetWindowLong(hwnd, GWL_STYLE, m_saved_style & ~(WS_CAPTION | WS_THICKFRAME));
-            SetWindowLong(hwnd, GWL_EXSTYLE, m_saved_exstyle & ~(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
+            SetWindowLong(hwnd, GWL_STYLE  , m_pimpl->m_saved_style   & ~(WS_CAPTION | WS_THICKFRAME));
+            SetWindowLong(hwnd, GWL_EXSTYLE, m_pimpl->m_saved_exstyle & ~(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
 
             // Obtener el monitor dónde está la ventana
             HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
@@ -279,15 +302,15 @@ namespace vitreum
         }
         else
         {
-            SetWindowLong(hwnd, GWL_STYLE, static_cast<DWORD>(m_saved_style));
-            SetWindowLong(hwnd, GWL_EXSTYLE, static_cast<DWORD>(m_saved_exstyle));
+            SetWindowLong(hwnd, GWL_STYLE  , static_cast<DWORD>(m_pimpl->m_saved_style));
+            SetWindowLong(hwnd, GWL_EXSTYLE, static_cast<DWORD>(m_pimpl->m_saved_exstyle));
 
             SetWindowPos
             (
                 hwnd, HWND_NOTOPMOST,
-                m_saved_rect.left, m_saved_rect.top,
-                m_saved_rect.right - m_saved_rect.left,
-                m_saved_rect.bottom - m_saved_rect.top,
+                m_pimpl->m_saved_rect.left, m_pimpl->m_saved_rect.top,
+                m_pimpl->m_saved_rect.right  - m_pimpl->m_saved_rect.left,
+                m_pimpl->m_saved_rect.bottom - m_pimpl->m_saved_rect.top,
                 SWP_NOOWNERZORDER | SWP_FRAMECHANGED
             );
 
@@ -362,6 +385,59 @@ namespace vitreum
         POINT pt = { position.xpos, position.ypos };
         ClientToScreen(m_pimpl->hwnd, &pt);
         SetCursorPos(pt.x, pt.y);
+    }
+
+    std::optional<std::filesystem::path> open_file_dialog(
+        const Window& owner,
+        const FileDialogOptions& options)
+    {
+        std::wstring filter;
+        for (const FileDialogFilter& entry : options.filters)
+        {
+            const std::wstring name = utf8_to_wide(entry.name);
+            const std::wstring pattern = utf8_to_wide(entry.pattern);
+            if (name.empty() && pattern.empty()) {
+                continue;
+            }
+
+            filter += name.empty() ? pattern : name;
+            if (!pattern.empty()) {
+                filter += L" (";
+                filter += pattern;
+                filter += L")";
+            }
+            filter.push_back(L'\0');
+            filter += pattern;
+            filter.push_back(L'\0');
+        }
+
+        if (filter.empty()) {
+            filter += L"Todos los archivos (*.*)";
+            filter.push_back(L'\0');
+            filter += L"*.*";
+            filter.push_back(L'\0');
+        }
+
+        std::vector<wchar_t> file_buffer(32768, L'\0');
+        const std::wstring title       = utf8_to_wide(options.title);
+        const std::wstring initial_dir = options.initial_directory.wstring();
+
+        OPENFILENAMEW dialog{};
+        dialog.lStructSize     = sizeof(dialog);
+        dialog.hwndOwner       = static_cast<HWND>(owner.native_handle().win32.hwnd);
+        dialog.lpstrFilter     = filter.c_str();
+        dialog.nFilterIndex    = 1;
+        dialog.lpstrFile       = file_buffer.data();
+        dialog.nMaxFile        = static_cast<DWORD>(file_buffer.size());
+        dialog.lpstrTitle      = title.empty() ? nullptr : title.c_str();
+        dialog.lpstrInitialDir = initial_dir.empty() ? nullptr : initial_dir.c_str();
+        dialog.Flags           = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER;
+
+        if (GetOpenFileNameW(&dialog) != TRUE) {
+            return std::nullopt;
+        }
+
+        return std::filesystem::path(file_buffer.data());
     }
 
 
@@ -440,7 +516,8 @@ namespace vitreum
                 }
 
                 WinEvent event{ action == ActionState::Released ? WinEventType::KeyRelease : (action == ActionState::Pressed ? WinEventType::KeyPress : WinEventType::KeyRepeat) };
-                event.key.key = TranslateVirtualKey(static_cast<int>(wparam), lparam);
+                event.key.key       = TranslateVirtualKey(static_cast<int>(wparam), lparam);
+                event.key.action    = action; // Es redundante con el WinEventType pero es que aún no sé si quiero tener solo el WinEventType o tener el KeyRepeat que no exista y tener ese estado en el action
                 event.key.scancode  = (lparam >> 16) & 0xFF;
                 event.key.modifiers = GetCurrentModifiers();
 
@@ -723,7 +800,7 @@ namespace vitreum
         if (key_state_control)  modifiers |= static_cast<uint32_t>(MouseModifier::Control);
         if (mouse_left_button)  modifiers |= static_cast<uint32_t>(MouseModifier::LeftButton);
         if (mouse_mid_button)   modifiers |= static_cast<uint32_t>(MouseModifier::MiddleButton);
-        if (mouse_right_button) modifiers |= static_cast<uint32_t>(MouseModifier::RigthButton);
+        if (mouse_right_button) modifiers |= static_cast<uint32_t>(MouseModifier::RightButton);
         if (key_state_shift)    modifiers |= static_cast<uint32_t>(MouseModifier::Shift);
         if (mouse_xbut1_button) modifiers |= static_cast<uint32_t>(MouseModifier::XButton1);
         if (mouse_xbut2_button) modifiers |= static_cast<uint32_t>(MouseModifier::XButton2);
