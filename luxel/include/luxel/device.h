@@ -1,5 +1,6 @@
 #pragma once
 #include <luxel/types.h>
+#include <luxel/swapchain.h>
 #include <cstdint>
 
 namespace luxel
@@ -10,7 +11,6 @@ namespace luxel
 	{
 		Backend backend{ Backend::Vulkan };
 		bool debug{ true };
-		WindowHandle window{};
 	};
 
 	class Device : public RefCounted
@@ -19,8 +19,9 @@ namespace luxel
 		virtual ~Device() = default;
 
 		virtual Backend backend() const = 0;
+		virtual Ref<Swapchain> create_swapchain(const SwapchainDescriptor&) = 0;
 	};
 
 	Ref<Device> create_device(const DeviceDescriptor& device_desc);
-
+	
 } // namespace luxel

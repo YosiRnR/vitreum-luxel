@@ -1,4 +1,5 @@
 #include "vulkan_platform.h"
+#include <cstdint>
 #include <vector>
 
 #if defined(_WIN32)
@@ -9,36 +10,15 @@
 
 namespace luxel::vulkan::platform
 {
-	std::vector<const char*> get_platform_instance_extensions(PlatformType platform)
+	std::vector<const char*> get_platform_instance_extensions()
 	{
-		using enum PlatformType;
-
-		switch (platform) {
-		case Windows:
 #if defined(_WIN32)
-			return { vk::KHRSurfaceExtensionName, vk::KHRWin32SurfaceExtensionName };
+		return { vk::KHRSurfaceExtensionName, vk::KHRWin32SurfaceExtensionName };
+#elif defined(__linux__)
+		return { vk::KHRSurfaceExtensionName, vk::KHRXlibSurfaceExtensionName };
 #else
-			return { vk::KHRSurfaceExtensionName };
+		return { vk::KHRSurfaceExtensionName };
 #endif
-
-		case Linux:
-#if defined(__linux__)
-			return { vk::KHRSurfaceExtensionName, vk::KHRXlibSurfaceExtensionName };
-#else
-			return { vk::KHRSurfaceExtensionName };
-#endif
-
-			//		case Linux2:
-			//#if defined(__linux__)
-			//			return { vk::KHRSurfaceExtensionName, vk::KHRWaylandSurfaceExtensionName };
-			//#else
-			//			return { vk::KHRSurfaceExtensionName };
-			//#endif
-
-		case Unknown:
-		default:
-			return {};
-		}
 	}
 
 	vk::raii::SurfaceKHR create_surface_for_window(const vk::raii::Instance& instance,
@@ -101,6 +81,15 @@ namespace luxel::vulkan::platform
 		default:
 			return nullptr;
 		}
+	}
+
+	bool queue_family_can_present(const vk::raii::PhysicalDevice& physical_device, uint32_t index)
+	{
+#if defined(_WIN32)
+		return physical_device.getWin32PresentationSupportKHR(index);
+#elif defined(__linux__)
+		return false;
+#endif
 	}
 
 } // namespace luxel::vulkan::platform

@@ -1,4 +1,5 @@
 #include "vulkan_physical_device.h"
+#include "vulkan_platform.h"
 #include <array>
 #include <format>
 #include <cstdint>
@@ -74,7 +75,7 @@ namespace luxel::vulkan
 				   all_supported(feature_chain.get<vk::PhysicalDeviceVulkan13Features>(), k_features13);
 		}
 
-		PhysicalDeviceRate rate_physical_device(const vk::raii::PhysicalDevice& physical_device, const vk::raii::SurfaceKHR& surface)
+		PhysicalDeviceRate rate_physical_device(const vk::raii::PhysicalDevice& physical_device)
 		{
 			PhysicalDeviceRate device_rate{
 				.device = physical_device,
@@ -96,12 +97,8 @@ namespace luxel::vulkan
 				return device_rate;
 			}
 
-			device_rate.indices = find_queue_families(physical_device, surface);
+			device_rate.indices = find_queue_families(physical_device);
 			if (!device_rate.indices.is_complete()) {
-				return device_rate;
-			}
-
-			if (bool swapchain_adequate = query_swapchain_support(physical_device, surface).is_adequate(); !swapchain_adequate) {
 				return device_rate;
 			}
 
@@ -128,7 +125,7 @@ namespace luxel::vulkan
 		return device_features_chain;
 	}
 
-	QueueFamilyIndices find_queue_families(const vk::raii::PhysicalDevice& physical_device, const vk::raii::SurfaceKHR& surface)
+	QueueFamilyIndices find_queue_families(const vk::raii::PhysicalDevice& physical_device)
 	{
 		QueueFamilyIndices indices{};
 		auto queue_families = physical_device.getQueueFamilyProperties();
@@ -139,7 +136,7 @@ namespace luxel::vulkan
 				indices.graphics_family = i;
 			}
 
-			if (physical_device.getSurfaceSupportKHR(i, *surface)) {
+			if (platform::queue_family_can_present(physical_device, i)) {
 				indices.present_family = i;
 			}
 
@@ -155,19 +152,7 @@ namespace luxel::vulkan
 		return indices;
 	}
 
-	SwapchainSupportDetails query_swapchain_support(const vk::raii::PhysicalDevice& physical_device, const vk::raii::SurfaceKHR& surface)
-	{
-		SwapchainSupportDetails details;
-		auto surface_handle = *surface;
-
-		details.capabilities  = physical_device.getSurfaceCapabilitiesKHR(surface_handle);
-		details.formats       = physical_device.getSurfaceFormatsKHR(surface_handle);
-		details.present_modes = physical_device.getSurfacePresentModesKHR(surface_handle);
-
-		return details;
-	}
-
-	PhysicalDeviceRate select_physical_device(const vk::raii::Instance& vk_instance, const vk::raii::SurfaceKHR& surface)
+	PhysicalDeviceRate select_physical_device(const vk::raii::Instance& vk_instance)
 	{
 		auto physical_devices = vk_instance.enumeratePhysicalDevices();
 
@@ -179,7 +164,7 @@ namespace luxel::vulkan
 
 		for (const auto& device : physical_devices)
 		{
-			auto cur_device = rate_physical_device(device, surface);
+			auto cur_device = rate_physical_device(device);
 
 			if (cur_device.score > best_device.score) {
 				best_device = std::move(cur_device);

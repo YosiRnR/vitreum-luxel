@@ -26,18 +26,6 @@ namespace luxel::vulkan
 		}
 	};
 
-	struct SwapchainSupportDetails
-	{
-		vk::SurfaceCapabilitiesKHR       capabilities;
-		std::vector<vk::SurfaceFormatKHR>     formats;
-		std::vector<vk::PresentModeKHR> present_modes;
-
-		// Un swapchain es adecuado si tiene al menos un formato de color y un modo de presentación compatibles
-		bool is_adequate() const {
-			return !formats.empty() && !present_modes.empty();
-		}
-	};
-
 	struct PhysicalDeviceRate
 	{
 		vk::raii::PhysicalDevice device;
@@ -45,9 +33,8 @@ namespace luxel::vulkan
 		QueueFamilyIndices indices{};
 	};
 
-	QueueFamilyIndices find_queue_families(const vk::raii::PhysicalDevice&, const vk::raii::SurfaceKHR&);
-	SwapchainSupportDetails query_swapchain_support(const vk::raii::PhysicalDevice&, const vk::raii::SurfaceKHR&);
-	PhysicalDeviceRate select_physical_device(const vk::raii::Instance&, const vk::raii::SurfaceKHR&);
+	QueueFamilyIndices find_queue_families(const vk::raii::PhysicalDevice&);
+	PhysicalDeviceRate select_physical_device(const vk::raii::Instance&);
 	void print_physical_device_info(const vk::PhysicalDevice&);
 
 } // namespace luxel::vulkan

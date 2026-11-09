@@ -1,6 +1,7 @@
 #pragma once
 
 #include <luxel/types.h>
+#include <luxel/swapchain.h>
 #include <luxel/device.h>
 #include "vulkan_common.h"
 #include <string>
@@ -18,7 +19,6 @@ namespace luxel::vulkan
 			uint32_t engine_version{ 1 };
 			uint32_t    api_version{ vk::ApiVersion13 };
 
-			WindowHandle window_handle{};
 			bool enable_validation_layers{ true };
 		};
 
@@ -27,6 +27,14 @@ namespace luxel::vulkan
 		~VulkanDevice() override;
 
 		Backend backend() const override { return Backend::Vulkan; }
+		Ref<Swapchain> create_swapchain(const SwapchainDescriptor&) override;
+
+
+		const vk::raii::Instance& instance() const { return m_instance; }
+		const vk::raii::PhysicalDevice& physical_device() const { return m_physical_device; }
+		uint32_t present_family_index() const { return m_present_queue_family_index; }
+		uint32_t graphics_family_index() const { return m_graphics_queue_family_index; }
+		const vk::raii::Device& logical_device() const { return m_logical_device; }
 
 	private:
 		// Vulkan RAII Context
@@ -37,7 +45,6 @@ namespace luxel::vulkan
 		// Vulkan RAII objects
 		vk::raii::Instance  m_instance{ nullptr };
 		vk::raii::DebugUtilsMessengerEXT m_debug_messenger{ nullptr };
-		vk::raii::SurfaceKHR m_surface{ nullptr };
 
 		vk::raii::PhysicalDevice m_physical_device{ nullptr };
 		vk::raii::Device          m_logical_device{ nullptr };
@@ -60,7 +67,6 @@ namespace luxel::vulkan
 		vk::DebugUtilsMessengerCreateInfoEXT debug_utils_create_info();
 		void create_instance(const InstanceConfig&);
 		void setup_debug_messenger();
-		void create_surface(const InstanceConfig&);
 		void pick_physical_device();
 		void create_logical_device();
 	};

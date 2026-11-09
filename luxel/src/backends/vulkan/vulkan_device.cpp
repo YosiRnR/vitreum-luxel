@@ -1,6 +1,8 @@
 #include <luxel/types.h>
 #include <luxel/device.h>
+#include <luxel/swapchain.h>
 #include "vulkan_device.h"
+#include "vulkan_swapchain.h"
 #include "vulkan_platform.h"
 #include "vulkan_physical_device.h"
 #include <set>
@@ -54,17 +56,20 @@ namespace luxel::vulkan
 		// aunque algunos de estos campos deberían ser seleccionables
 		InstanceConfig config{};
 
-		config.window_handle = device_desc.window;
 		config.enable_validation_layers = device_desc.debug;
 
 		create_instance(config);
 		setup_debug_messenger();
-		create_surface(config);
 		pick_physical_device();
 		create_logical_device();
 	}
 
 	VulkanDevice::~VulkanDevice() = default;
+
+	Ref<Swapchain> VulkanDevice::create_swapchain(const SwapchainDescriptor& swapchain_desc)
+	{
+		return Ref<Swapchain>(new VulkanSwapchain(Ref<VulkanDevice>(this), swapchain_desc));
+	}
 
 	vk::DebugUtilsMessengerCreateInfoEXT VulkanDevice::debug_utils_create_info()
 	{
@@ -99,7 +104,7 @@ namespace luxel::vulkan
 		m_enable_validation_layers = !enabled_layers.empty();
 
 		// Filtrar las extensiones requeridas según las extensiones disponibles
-		std::vector<char const*> required_extensions = platform::get_platform_instance_extensions(config.window_handle.platform);
+		std::vector<char const*> required_extensions = platform::get_platform_instance_extensions();
 		if (m_enable_validation_layers) {
 			required_extensions.push_back(vk::EXTDebugUtilsExtensionName);
 		}
@@ -162,18 +167,9 @@ namespace luxel::vulkan
 		m_debug_messenger = vk::raii::DebugUtilsMessengerEXT(m_instance, debug_messenger_create_info);
 	}
 
-	void VulkanDevice::create_surface(const InstanceConfig& config)
-	{
-		m_surface = platform::create_surface_for_window(m_instance, config.window_handle);
-
-		if (!*m_surface) {
-			throw std::runtime_error("No se pudo crear la surface para la ventana");
-		}
-	}
-
 	void VulkanDevice::pick_physical_device()
 	{
-		auto best_device = select_physical_device(m_instance, m_surface);
+		auto best_device = select_physical_device(m_instance);
 
 		// Guardamos los índices de las familias de colas del dispositivo elegido.
 		// Son necesarios para crear el dispositivo lógico y el command pool.

@@ -1,7 +1,8 @@
 #include <vitreum/vitreum.h>
 #include <luxel/luxel.h>
-// Si lo incluyes no compila porque no encuentra el archivo de origen, así que Vulkan está oculto al test
-//#include <vulkan/vulkan.hpp>
+#include <iostream>
+#include <cstdint>
+#include <format>
 
 static luxel::WindowHandle to_luxel(const vitreum::NativeWindowHandle& win_handle)
 {
@@ -33,9 +34,20 @@ int main(int argc, char** argv)
 
 	auto render_device = luxel::create_device(luxel::DeviceDescriptor{
 		.backend = luxel::Backend::Vulkan,
-		.debug   = true,
-		.window  = to_luxel(main_wnd.native_handle())
+		.debug   = true
 	});
+
+	auto swapchain = render_device->create_swapchain({
+		.window = to_luxel(main_wnd.native_handle()),
+		.size = { 1920, 1080 },
+		.vsync = true
+	});
+
+	auto extent       = swapchain->extent();
+	auto color_format = swapchain->color_format();
+
+	std::cout << std::format("      Extent: {} x {}\n", extent.width, extent.height);
+	std::cout << std::format("Color Format: {}\n", static_cast<uint8_t>(color_format));
 
 	main_wnd.show();
 
@@ -48,7 +60,9 @@ int main(int argc, char** argv)
 			auto event = main_wnd.pop_event();
 
 			if (event && event->type == vitreum::WinEventType::Close) {
-				main_wnd.cancel_close(vitreum::message_box_okcancel(main_wnd.native_handle(), "¿Desea cerrar la ventana?", "WARNING"));
+				main_wnd.cancel_close(
+					vitreum::message_box_okcancel(main_wnd.native_handle(), "¿Desea cerrar la ventana?", "WARNING")
+				);
 			}
 		}
 	}

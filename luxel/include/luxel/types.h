@@ -1,4 +1,5 @@
 #pragma once
+
 #include <concepts>
 #include <utility>
 #include <cstdint>
@@ -29,6 +30,12 @@ namespace luxel
 			Win32Handle windows;
 			LinuxHandle linux;
 		};
+	};
+
+	struct Size2D
+	{
+		uint32_t  width{};
+		uint32_t height{};
 	};
 
 	class RefCounted
