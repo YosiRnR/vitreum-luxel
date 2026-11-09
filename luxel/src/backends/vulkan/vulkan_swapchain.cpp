@@ -4,9 +4,11 @@
 #include "vulkan_platform.h"
 #include <stdexcept>
 #include <algorithm>
+#include <optional>
 #include <cstdint>
 #include <vector>
 #include <limits>
+#include <array>
 
 namespace luxel::vulkan
 {
@@ -132,11 +134,15 @@ namespace luxel::vulkan
 			.imageUsage       = vk::ImageUsageFlagBits::eColorAttachment
 		};
 
+		std::array<uint32_t, 2> queue_indexes{ m_ref_device->graphics_family_index(), m_ref_device->present_family_index() };
+
 		if (m_ref_device->present_family_index() == m_ref_device->graphics_family_index()) {
 			create_info.imageSharingMode = vk::SharingMode::eExclusive;
 		}
 		else {
 			create_info.imageSharingMode = vk::SharingMode::eConcurrent;
+			create_info.queueFamilyIndexCount = static_cast<uint32_t>(queue_indexes.size());
+			create_info.pQueueFamilyIndices   = queue_indexes.data();
 		}
 
 		create_info.preTransform   = capabilities.currentTransform;
@@ -148,6 +154,8 @@ namespace luxel::vulkan
 		m_swapchain = vk::raii::SwapchainKHR(m_ref_device->logical_device(), create_info);
 
 		m_images = m_swapchain.getImages();
+
+		m_render_finished.reserve(m_images.size());
 
 		for (const auto& image : m_images)
 		{
@@ -170,6 +178,8 @@ namespace luxel::vulkan
 				}
 			};
 			m_image_views.emplace_back(m_ref_device->logical_device(), view_info);
+
+			m_render_finished.emplace_back(m_ref_device->logical_device(), vk::SemaphoreCreateInfo{});
 		}
 	}
 
@@ -185,6 +195,45 @@ namespace luxel::vulkan
 
 	void VulkanSwapchain::resize(Size2D)
 	{
+	}
+
+	std::optional<uint32_t> VulkanSwapchain::acquire(const vk::raii::Semaphore& image_available)
+	{
+		auto [result, index] = m_swapchain.acquireNextImage(UINT64_MAX, *image_available, nullptr);
+
+		if (result == vk::Result::eErrorOutOfDateKHR) {
+			m_needs_recreate = true;
+			return std::nullopt;
+		}
+		if (result == vk::Result::eSuboptimalKHR) {
+			m_needs_recreate = true;
+			return index;
+		}
+		if (result != vk::Result::eSuccess) {
+			throw std::runtime_error("Error fatal adquiriendo la siguiente imagen del Swapchain");
+		}
+
+		return index;
+	}
+
+	void VulkanSwapchain::present(const vk::raii::Queue& queue, uint32_t image_index)
+	{
+		vk::PresentInfoKHR present_info{
+			.waitSemaphoreCount = 1,
+			.pWaitSemaphores    = &*m_render_finished[image_index],
+			.swapchainCount     = 1,
+			.pSwapchains        = &*m_swapchain,
+			.pImageIndices      = &image_index
+		};
+
+		auto result = queue.presentKHR(present_info);
+
+		if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR) {
+			m_needs_recreate = true;
+		}
+		else if (result != vk::Result::eSuccess) {
+			throw std::runtime_error("Fatal error presentando la imagen del Swapchain");
+		}
 	}
 
 } // namespace luxel::vulkan

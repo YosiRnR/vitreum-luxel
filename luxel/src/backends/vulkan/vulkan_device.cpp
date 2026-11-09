@@ -1,9 +1,12 @@
 #include <luxel/types.h>
 #include <luxel/device.h>
 #include <luxel/swapchain.h>
+#include <luxel/frame.h>
+#include "vulkan_common.h"
 #include "vulkan_device.h"
 #include "vulkan_swapchain.h"
 #include "vulkan_platform.h"
+#include "vulkan_frame.h"
 #include "vulkan_physical_device.h"
 #include <set>
 #include <ranges>
@@ -13,6 +16,7 @@
 #include <cstring>
 #include <cstdint>
 #include <utility>
+#include <optional>
 #include <iostream>
 #include <algorithm>
 #include <stdexcept>
@@ -62,6 +66,7 @@ namespace luxel::vulkan
 		setup_debug_messenger();
 		pick_physical_device();
 		create_logical_device();
+		create_frames();
 	}
 
 	VulkanDevice::~VulkanDevice() = default;
@@ -69,6 +74,108 @@ namespace luxel::vulkan
 	Ref<Swapchain> VulkanDevice::create_swapchain(const SwapchainDescriptor& swapchain_desc)
 	{
 		return Ref<Swapchain>(new VulkanSwapchain(Ref<VulkanDevice>(this), swapchain_desc));
+	}
+
+	Frame* VulkanDevice::begin_frame(Swapchain& swapchain)
+	{
+		VulkanSwapchain& vk_swapchain = static_cast<VulkanSwapchain&>(swapchain);
+
+		auto result = m_logical_device.waitForFences(*m_frames_resources[m_frame_index].in_flight, vk::True, UINT64_MAX);
+		if (result != vk::Result::eSuccess) {
+			throw std::runtime_error("Fatal error esperando la valla del frame en vuelo");
+		}
+
+		if (vk_swapchain.needs_recreate()) {
+			// TODO: recrear swapchain
+		}
+
+		auto index = vk_swapchain.acquire(m_frames_resources[m_frame_index].image_available);
+		if (index == std::nullopt) {
+			return nullptr;
+		}
+
+		m_logical_device.resetFences(*m_frames_resources[m_frame_index].in_flight);
+
+		auto& frame_res = m_frames_resources[m_frame_index];
+		frame_res.command_pool.reset();
+		frame_res.command_buffer.begin(vk::CommandBufferBeginInfo{ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+
+		vk::ImageMemoryBarrier2 barrier{
+			.srcStageMask     = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			.srcAccessMask    = {},
+			.dstStageMask     = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			.dstAccessMask    = vk::AccessFlagBits2::eColorAttachmentWrite,
+			.oldLayout        = vk::ImageLayout::eUndefined,
+			.newLayout        = vk::ImageLayout::eColorAttachmentOptimal,
+			.image            = vk_swapchain.image(index.value()),
+			.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
+		};
+
+		vk::DependencyInfo dep{ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier };
+		frame_res.command_buffer.pipelineBarrier2(dep);
+
+		m_frame.reset(
+			frame_res.command_buffer,
+			vk_swapchain.image(index.value()),
+			vk_swapchain.image_view(index.value()),
+			vk_swapchain.vk_extent(),
+			vk_swapchain,
+			index.value()
+		);
+
+		return &m_frame;
+	}
+
+	void VulkanDevice::end_frame(Frame& frame)
+	{
+		auto& vk_frame = static_cast<VulkanFrame&>(frame);
+
+		auto& frame_res = m_frames_resources[m_frame_index];
+
+		vk::ImageMemoryBarrier2 barrier{
+			.srcStageMask     = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			.srcAccessMask    = vk::AccessFlagBits2::eColorAttachmentWrite,
+			.dstStageMask     = {},
+			.dstAccessMask    = {},
+			.oldLayout        = vk::ImageLayout::eColorAttachmentOptimal,
+			.newLayout        = vk::ImageLayout::ePresentSrcKHR,
+			.image            = vk_frame.swapchain().image(vk_frame.image_index()),
+			.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
+		};
+
+		vk::DependencyInfo dep{ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier };
+		frame_res.command_buffer.pipelineBarrier2(dep);
+
+		frame_res.command_buffer.end();
+
+		vk::SemaphoreSubmitInfo wait_info{
+			.semaphore = *frame_res.image_available,
+			.stageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput
+		};
+
+		vk::SemaphoreSubmitInfo signal_info{
+			.semaphore = *vk_frame.swapchain().render_finished(vk_frame.image_index()),
+			.stageMask = vk::PipelineStageFlagBits2::eAllCommands
+		};
+
+		vk::CommandBufferSubmitInfo cmd_info{
+			.commandBuffer = *frame_res.command_buffer
+		};
+
+		vk::SubmitInfo2 submit_info{
+			.waitSemaphoreInfoCount   = 1, .pWaitSemaphoreInfos   = &wait_info,
+			.commandBufferInfoCount   = 1, .pCommandBufferInfos   = &cmd_info,
+			.signalSemaphoreInfoCount = 1, .pSignalSemaphoreInfos = &signal_info
+		};
+		m_graphics_queue.submit2(submit_info, *frame_res.in_flight);
+
+		vk_frame.swapchain().present(m_present_queue, vk_frame.image_index());
+
+		m_frame_index = (m_frame_index + 1) % k_frames_in_flight;
+	}
+
+	void VulkanDevice::wait_idle() {
+		m_logical_device.waitIdle();
 	}
 
 	vk::DebugUtilsMessengerCreateInfoEXT VulkanDevice::debug_utils_create_info()
@@ -218,6 +325,36 @@ namespace luxel::vulkan
 		}
 		else {
 			m_present_queue = vk::raii::Queue(m_logical_device, m_present_queue_family_index, 0);
+		}
+	}
+
+	void VulkanDevice::create_frames()
+	{
+		for (auto& frame : m_frames_resources)
+		{
+			vk::FenceCreateInfo fence_create_info{
+				.flags = vk::FenceCreateFlagBits::eSignaled
+			};
+			
+			vk::SemaphoreCreateInfo semaphore_create_info{};
+
+			vk::CommandPoolCreateInfo cmd_pool_create_info{
+				.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+				.queueFamilyIndex = m_graphics_queue_family_index
+			};
+
+			frame.command_pool = vk::raii::CommandPool(m_logical_device, cmd_pool_create_info);
+
+			vk::CommandBufferAllocateInfo alloc_info{
+				.commandPool        = *frame.command_pool,
+				.level              = vk::CommandBufferLevel::ePrimary,
+				.commandBufferCount = 1
+			};
+			vk::raii::CommandBuffers temp_buffers(m_logical_device, alloc_info);
+			frame.command_buffer = std::move(temp_buffers[0]);
+
+			frame.image_available = vk::raii::Semaphore(m_logical_device, semaphore_create_info);
+			frame.in_flight       = vk::raii::Fence(m_logical_device, fence_create_info);
 		}
 	}
 

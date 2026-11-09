@@ -65,5 +65,15 @@ int main(int argc, char** argv)
 				);
 			}
 		}
+
+		auto* frame = render_device->begin_frame(*swapchain);
+		if (frame == nullptr) {
+			continue;
+		}
+		frame->commands().begin_rendering({ .clear = { 1.0f, 0.0f, 0.0f, 1.0f } });
+		frame->commands().end_rendering();
+		render_device->end_frame(*frame);
 	}
+
+	render_device->wait_idle();
 }
