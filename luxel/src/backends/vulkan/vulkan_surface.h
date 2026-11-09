@@ -1,20 +1,21 @@
 #pragma once
-#include "vulkan_common.h"
+
 #include <luxel/types.h>
-#include "vulkan_context.h"
+#include "vulkan_common.h"
+#include "vulkan_device.h"
 
 namespace luxel::vulkan
 {
 	class VulkanSurface
 	{
 	public:
-		VulkanSurface(const Ref<VulkanContext> vk_context);
+		VulkanSurface(const Ref<VulkanDevice> vk_device);
 		~VulkanSurface();
 
 	private:
 		vk::raii::SurfaceKHR m_surface{ nullptr };
 
-		const Ref<VulkanContext> m_ref_context;
+		const Ref<VulkanDevice> m_ref_device;
 	};
 
 } // namespace luxel::vulkan

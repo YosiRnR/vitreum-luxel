@@ -5,14 +5,17 @@ project(luxel LANGUAGES CXX)
 find_package(Vulkan REQUIRED)
 
 add_library(luxel STATIC
-    "src/backends/vulkan/vulkan_context.cpp"
+    
     "src/backends/vulkan/vulkan_platform.cpp"
     "src/backends/vulkan/vulkan_surface.cpp"
     "include/luxel/luxel.h"
     "include/luxel/device.h"
     "src/device.cpp"
     "src/backends/vulkan/vulkan_device.h"
-    "src/backends/vulkan/vulkan_device.cpp")
+    "src/backends/vulkan/vulkan_device.cpp"
+    "src/backends/vulkan/vulkan_physical_device.h"
+    "src/backends/vulkan/vulkan_physical_device.cpp"
+)
 
 target_include_directories(luxel
     PUBLIC

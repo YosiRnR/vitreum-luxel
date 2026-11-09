@@ -40,15 +40,22 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   evento Close con veto, Alt+F4, native_handle() y open_file_dialog().
   Compilación unificada en la raíz. Hito 1 del RHI: Vulkan oculto tras
   `luxel::Device` (`create_device()`), `tests/test_1` sin cabeceras de Vulkan.
+  Hito 2 del RHI: `VulkanDevice` absorbió `VulkanContext`; selección de GPU
+  (`vulkan_physical_device.h/.cpp`), dispositivo lógico 1.3 y colas gráfica
+  y presentación. Requisitos en una sola fuente: extensiones en
+  `k_required_device_extensions` y features en tablas de punteros a miembro
+  (se usan para exigir y para activar). La surface vive aún en `VulkanDevice`
+  (provisional hasta la swapchain).
 - En curso: matemáticas propias en luxel/src/math. Plan de hitos en
   `docs/rhi-design.md`.
 - Pendiente en la ventana, antes de la swapchain: WM_SIZE al minimizar
   y tamaños cliente/ventana (set_size).
 - Aparcado en la ventana (se retoma más adelante): Raw Input, DPI,
   UTF-8 en títulos, registro único de la clase de ventana.
-- Siguiente (hito 2): `VulkanDevice` absorbe `VulkanContext`; elegir GPU
-  (colas gráfica y presentación) y crear el dispositivo lógico 1.3.
-  Después: swapchain y bucle de frame (hito 3).
+- Siguiente (hito 3): `Swapchain` y bucle de frame (`begin_frame` /
+  `end_frame`, limpiar a un color); la surface sale del device y el
+  `WindowHandle` sale de `DeviceDescriptor`. Pendiente menor del hito 2:
+  quitar `vulkan_surface.*` (resto del hito 1) o convertirlo en la swapchain.
 
 ## Compilación
 - Ficheros de CMakeLists.txt tanto en luxel como en vitreum y uno general en librerias.
