@@ -85,8 +85,8 @@ namespace luxel::vulkan
 			throw std::runtime_error("Fatal error esperando la valla del frame en vuelo");
 		}
 
-		if (vk_swapchain.needs_recreate()) {
-			// TODO: recrear swapchain
+		if (vk_swapchain.needs_recreate() && !vk_swapchain.recreate()) {
+			return nullptr;
 		}
 
 		auto index = vk_swapchain.acquire(m_frames_resources[m_frame_index].image_available);

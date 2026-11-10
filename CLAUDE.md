@@ -7,7 +7,9 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
 - Cuando te enseñe código, revísalo: señala errores y mejoras y explica el porqué.
   Dame pistas antes que soluciones.
 - Si me atasco, da fragmentos pequeños (unas pocas líneas), nunca ficheros enteros.
-- No modifiques ficheros del proyecto salvo que te lo pida explícitamente.
+- No modifiques ficheros del proyecto salvo que te lo pida explícitamente o
+  lo hayamos consensuado antes (p. ej. actualizar este fichero o `docs/`).
+  El código de los hitos lo escribo yo.
 - Responde en español.
 - Trabajamos por hitos pequeños. Al acabar uno, propón actualizar "Estado".
 
@@ -44,18 +46,27 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   (`vulkan_physical_device.h/.cpp`), dispositivo lógico 1.3 y colas gráfica
   y presentación. Requisitos en una sola fuente: extensiones en
   `k_required_device_extensions` y features en tablas de punteros a miembro
-  (se usan para exigir y para activar). La surface vive aún en `VulkanDevice`
-  (provisional hasta la swapchain).
+  (se usan para exigir y para activar).
+  Hito 3 del RHI: `Swapchain` (`create_swapchain()`, surface propia en
+  `VulkanSwapchain`) y bucle de frame (`begin_frame` / `end_frame`) con 2
+  frames en vuelo, barreras synchronization2 y limpiado a un color, sin avisos
+  de validación. Recreación al redimensionar u obsoleta (`resize()` solo marca,
+  se recrea al inicio de `begin_frame`); minimizada (0x0) => `begin_frame`
+  devuelve nullptr. El device se crea sin ventana: extensiones de instancia y
+  capacidad de presentar por plataforma de compilación (`vulkan_platform.*`);
+  `WindowHandle` sale de `DeviceDescriptor` y va en `SwapchainDescriptor`.
+  Ventana: `set_size` con tamaño de cliente (`AdjustWindowRectEx`).
+  `vulkan_surface.*` eliminado. Driver decodificado en la información de GPU.
 - En curso: matemáticas propias en luxel/src/math. Plan de hitos en
   `docs/rhi-design.md`.
-- Pendiente en la ventana, antes de la swapchain: WM_SIZE al minimizar
-  y tamaños cliente/ventana (set_size).
+- Siguiente (hito 4): destrucción diferida y revisión de `Ref::adopt` y del
+  contador inicial de `RefCounted`.
+- Pendiente (ventana/bucle): redibujar durante el arrastre del borde (bucle
+  modal de Win32); con la ventana minimizada el bucle de la app gira sin dormir
+  (esperar mensajes); el tamaño de la swapchain en `test_1` debería salir de la
+  ventana y no de un valor fijo.
 - Aparcado en la ventana (se retoma más adelante): Raw Input, DPI,
   UTF-8 en títulos, registro único de la clase de ventana.
-- Siguiente (hito 3): `Swapchain` y bucle de frame (`begin_frame` /
-  `end_frame`, limpiar a un color); la surface sale del device y el
-  `WindowHandle` sale de `DeviceDescriptor`. Pendiente menor del hito 2:
-  quitar `vulkan_surface.*` (resto del hito 1) o convertirlo en la swapchain.
 
 ## Compilación
 - Ficheros de CMakeLists.txt tanto en luxel como en vitreum y uno general en librerias.

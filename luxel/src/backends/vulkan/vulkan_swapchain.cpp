@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <optional>
+#include <utility>
 #include <cstdint>
 #include <vector>
 #include <limits>
@@ -101,6 +102,8 @@ namespace luxel::vulkan
 
 	VulkanSwapchain::VulkanSwapchain(const Ref<VulkanDevice>& vk_device, const SwapchainDescriptor& swapchain_desc)
 		: m_ref_device(vk_device)
+		, m_vsync(swapchain_desc.vsync)
+		, m_pending_size(swapchain_desc.size)
 	{
 		m_surface = platform::create_surface_for_window(m_ref_device->instance(), swapchain_desc.window);
 
@@ -112,14 +115,25 @@ namespace luxel::vulkan
 			throw std::runtime_error("La cola de presentación no está disponible");
 		}
 
+		create(swapchain_desc.size);
+	}
+
+	VulkanSwapchain::~VulkanSwapchain() = default;
+
+	void VulkanSwapchain::create(Size2D size)
+	{
+		m_image_views.clear();
+		m_render_finished.clear();
+		vk::raii::SwapchainKHR old_swapchain = std::move(m_swapchain);
+
 		auto capabilities  = m_ref_device->physical_device().getSurfaceCapabilitiesKHR(*m_surface);
 		auto formats       = m_ref_device->physical_device().getSurfaceFormatsKHR(*m_surface);
 		auto present_modes = m_ref_device->physical_device().getSurfacePresentModesKHR(*m_surface);
 
 		vk::SurfaceFormatKHR surface_format = choose_surface_format(formats);
 		m_format = surface_format.format;
-		vk::PresentModeKHR present_mode = choose_present_mode(present_modes, swapchain_desc.vsync);
-		m_extent = choose_extent(capabilities, swapchain_desc.size);
+		vk::PresentModeKHR present_mode = choose_present_mode(present_modes, m_vsync);
+		m_extent = choose_extent(capabilities, size);
 
 		uint32_t image_count = capabilities.maxImageCount > 0 ? std::min(capabilities.minImageCount + 1, capabilities.maxImageCount) : capabilities.minImageCount + 1;
 
@@ -131,7 +145,8 @@ namespace luxel::vulkan
 			.imageColorSpace  = surface_format.colorSpace,
 			.imageExtent      = m_extent,
 			.imageArrayLayers = 1,
-			.imageUsage       = vk::ImageUsageFlagBits::eColorAttachment
+			.imageUsage       = vk::ImageUsageFlagBits::eColorAttachment,
+			.oldSwapchain     = *old_swapchain
 		};
 
 		std::array<uint32_t, 2> queue_indexes{ m_ref_device->graphics_family_index(), m_ref_device->present_family_index() };
@@ -142,7 +157,7 @@ namespace luxel::vulkan
 		else {
 			create_info.imageSharingMode = vk::SharingMode::eConcurrent;
 			create_info.queueFamilyIndexCount = static_cast<uint32_t>(queue_indexes.size());
-			create_info.pQueueFamilyIndices   = queue_indexes.data();
+			create_info.pQueueFamilyIndices = queue_indexes.data();
 		}
 
 		create_info.preTransform   = capabilities.currentTransform;
@@ -183,7 +198,22 @@ namespace luxel::vulkan
 		}
 	}
 
-	VulkanSwapchain::~VulkanSwapchain() = default;
+	bool VulkanSwapchain::recreate()
+	{
+		auto capabilities = m_ref_device->physical_device().getSurfaceCapabilitiesKHR(*m_surface);
+
+		auto extent = choose_extent(capabilities, m_pending_size);
+		if (extent.width == 0 || extent.height == 0) {
+			return false;
+		}
+
+		m_ref_device->wait_idle();
+
+		create(m_pending_size);
+		m_needs_recreate = false;
+
+		return true;
+	}
 
 	Size2D VulkanSwapchain::extent() const {
 		return Size2D{ .width = m_extent.width, .height = m_extent.height };
@@ -193,8 +223,10 @@ namespace luxel::vulkan
 		return from_vk_format(m_format);
 	}
 
-	void VulkanSwapchain::resize(Size2D)
+	void VulkanSwapchain::resize(Size2D size)
 	{
+		m_needs_recreate = true;
+		m_pending_size = size;
 	}
 
 	std::optional<uint32_t> VulkanSwapchain::acquire(const vk::raii::Semaphore& image_available)

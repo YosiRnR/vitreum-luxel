@@ -20,6 +20,8 @@ namespace luxel::vulkan
 		Format color_format() const override;
 		void   resize(Size2D) override;
 
+		bool   recreate() override;
+
 		std::optional<uint32_t> acquire(const vk::raii::Semaphore&);
 		void present(const vk::raii::Queue&, uint32_t);
 
@@ -43,10 +45,13 @@ namespace luxel::vulkan
 		std::vector<vk::raii::Semaphore> m_render_finished;
 
 		bool m_needs_recreate{ false };
+		Size2D m_pending_size{};
+		bool m_vsync{ true };
 
 		vk::Format   m_format{};
 		vk::Extent2D m_extent{};
 
+		void create(Size2D);
 	};
 
 } // namespace luxel::vulkan

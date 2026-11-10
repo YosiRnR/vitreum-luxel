@@ -39,8 +39,8 @@ int main(int argc, char** argv)
 
 	auto swapchain = render_device->create_swapchain({
 		.window = to_luxel(main_wnd.native_handle()),
-		.size = { 1920, 1080 },
-		.vsync = true
+		.size   = { static_cast<uint32_t>(main_wnd.width()), static_cast<uint32_t>(main_wnd.height()) },
+		.vsync  = true
 	});
 
 	auto extent       = swapchain->extent();
@@ -48,6 +48,8 @@ int main(int argc, char** argv)
 
 	std::cout << std::format("      Extent: {} x {}\n", extent.width, extent.height);
 	std::cout << std::format("Color Format: {}\n", static_cast<uint8_t>(color_format));
+
+	main_wnd.set_size({ 800, 600 });
 
 	main_wnd.show();
 
@@ -64,6 +66,9 @@ int main(int argc, char** argv)
 					vitreum::message_box_okcancel(main_wnd.native_handle(), "¿Desea cerrar la ventana?", "WARNING")
 				);
 			}
+			else if (event && event->type == vitreum::WinEventType::Resize) {
+				swapchain->resize({ static_cast<uint32_t>(event->size.width), static_cast<uint32_t>(event->size.height) });
+			}
 		}
 
 		auto* frame = render_device->begin_frame(*swapchain);
@@ -73,6 +78,13 @@ int main(int argc, char** argv)
 		frame->commands().begin_rendering({ .clear = { 1.0f, 0.0f, 0.0f, 1.0f } });
 		frame->commands().end_rendering();
 		render_device->end_frame(*frame);
+
+		static luxel::Size2D last{};
+		auto now = swapchain->extent();
+		if (now.width != last.width || now.height != last.height) {
+			std::cout << std::format("Swapchain: {} x {}\n", now.width, now.height);
+			last = now;
+		}
 	}
 
 	render_device->wait_idle();

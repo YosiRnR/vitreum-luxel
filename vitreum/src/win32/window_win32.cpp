@@ -247,9 +247,14 @@ namespace vitreum
 
     void Window::set_size(Size size)
     {
-        m_width  = size.width;
-        m_height = size.height;
-        SetWindowPos(m_pimpl->hwnd, nullptr, 0, 0, size.width, size.height, SWP_NOMOVE | SWP_NOZORDER);
+        RECT client_rect{ .left = 0, .top = 0, .right = size.width, .bottom = size.height };
+        AdjustWindowRectEx(&client_rect,
+            static_cast<DWORD>(GetWindowLongPtr(m_pimpl->hwnd, GWL_STYLE)),
+            FALSE,
+            static_cast<DWORD>(GetWindowLongPtr(m_pimpl->hwnd, GWL_EXSTYLE))
+        );
+
+        SetWindowPos(m_pimpl->hwnd, nullptr, 0, 0, client_rect.right - client_rect.left, client_rect.bottom - client_rect.top,  SWP_NOMOVE | SWP_NOZORDER);
     }
 
     void Window::request_focus()

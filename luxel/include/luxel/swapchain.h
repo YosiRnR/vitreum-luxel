@@ -32,6 +32,8 @@ namespace luxel
 		virtual Size2D extent() const = 0;
 		virtual Format color_format() const = 0;
 		virtual void   resize(Size2D) = 0;
+
+		virtual bool   recreate() = 0;
 	};
 
 } // namespace luxel

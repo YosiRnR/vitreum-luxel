@@ -2,6 +2,7 @@
 #include "vulkan_platform.h"
 #include <array>
 #include <format>
+#include <string>
 #include <cstdint>
 #include <utility>
 #include <iostream>
@@ -49,6 +50,28 @@ namespace luxel::vulkan
 			});
 		}
 
+		std::string get_formatted_driver_version(uint32_t vendor_id, uint32_t driver_version)
+		{
+			if (vendor_id == 0x10DE) { // NVIDIA
+				uint32_t major = (driver_version >> 22) & 0x3FF;
+				uint32_t minor = (driver_version >> 14) & 0xFF;
+				uint32_t patch = (driver_version >> 6) & 0xFF;
+				uint32_t build = driver_version & 0x3F;
+				return std::format("{}.{}.{}.{}", major, minor, patch, build);
+			}
+			else if (vendor_id == 0x1002) { // AMD
+				uint32_t major = (driver_version >> 22) & 0x3FF;
+				uint32_t minor = (driver_version >> 14) & 0xFF;
+				uint32_t patch = driver_version & 0x3FFF;
+				return std::format("{}.{}.{}", major, minor, patch);
+			}
+			// Genérico / Estándar
+			return std::format("{}.{}.{}",
+				VK_VERSION_MAJOR(driver_version),
+				VK_VERSION_MINOR(driver_version),
+				VK_VERSION_PATCH(driver_version)
+			);
+		}
 
 		bool check_device_extension_support(const vk::raii::PhysicalDevice& physical_device)
 		{
@@ -202,7 +225,7 @@ namespace luxel::vulkan
 		std::cout << std::format("Vulkan:      {}.{}.{}\n", vk::versionMajor(properties.properties.apiVersion),
 			vk::versionMinor(properties.properties.apiVersion),
 			vk::versionPatch(properties.properties.apiVersion));
-		std::cout << std::format("Driver:      {}\n", properties.properties.driverVersion);
+		std::cout << std::format("Driver:      {}\n", get_formatted_driver_version(properties.properties.vendorID, properties.properties.driverVersion));
 	}
 
 } // namespace luxel::vulkan
