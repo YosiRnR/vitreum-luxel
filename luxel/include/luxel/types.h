@@ -58,12 +58,17 @@ namespace luxel
 			// Decrementamos el contador y, si llega a 0, destruimos el objeto
 			// NOLINTNEXTLINE(cppcoreguidelines-owning-memory) 
 			if (m_ref_count.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-				delete this;// NOSONAR: Intrusive reference counting requires explicit self-deletion on zero refs.
+				on_zero_refs();
 			}
 		}
 
 		uint32_t ref_count() const noexcept {
 			return m_ref_count.load(std::memory_order_relaxed);
+		}
+
+	protected:
+		virtual void on_zero_refs() const {
+			delete this;
 		}
 	};
 
@@ -87,13 +92,6 @@ namespace luxel
 			}
 		}
 
-		static Ref<T> adopt(T* ptr) noexcept
-		{
-			Ref<T> r;
-			r.m_ptr = ptr;
-			return r;
-		}
-
 		// 2. Destructor (RAII: decrementa referencia al salir de ámbito)
 		~Ref()
 		{
@@ -110,8 +108,9 @@ namespace luxel
 			}
 		}
 
+		// Constructor de copia desde clase derivada (sin explicit para permitir conversiones implícitas)
 		template<class U> requires std::derived_from<U, T>
-		explicit Ref(const Ref<U>& other) : m_ptr(other.m_ptr)
+		Ref(const Ref<U>& other) : m_ptr(other.m_ptr)
 		{
 			if (m_ptr) {
 				m_ptr->add_ref();
@@ -154,8 +153,9 @@ namespace luxel
 			other.m_ptr = nullptr;
 		}
 
+		// Constructor de movimiento desde clase derivada (sin explicit para permitir conversiones implicitas)
 		template<class U> requires std::derived_from<U, T>
-		explicit Ref(Ref<U>&& other) noexcept : m_ptr(std::exchange(other.m_ptr, nullptr)) {
+		Ref(Ref<U>&& other) noexcept : m_ptr(std::exchange(other.m_ptr, nullptr)) {
 		}
 
 
@@ -193,12 +193,6 @@ namespace luxel
 		T* get() const noexcept { return m_ptr; }
 
 		explicit operator bool() const noexcept { return m_ptr != nullptr; }
-
-		// Helper estático estilo make_shared
-		template <typename... Args>
-		static Ref<T> create(Args&&... args) {
-			return Ref<T>(new T(std::forward<Args>(args)...));
-		}
 	};
 
 } // namespace luxel

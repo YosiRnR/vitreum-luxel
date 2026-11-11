@@ -57,14 +57,22 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   `WindowHandle` sale de `DeviceDescriptor` y va en `SwapchainDescriptor`.
   Ventana: `set_size` con tamaño de cliente (`AdjustWindowRectEx`).
   `vulkan_surface.*` eliminado. Driver decodificado en la información de GPU.
+  Hito 4 del RHI: `Ref` sin `adopt` ni `create`; contador de `RefCounted` a 0 y
+  `Ref(T*)` incrementa; constructores de `VulkanDevice` y `VulkanSwapchain`
+  privados con fábrica estática. Destrucción diferida: `RefCounted::on_zero_refs()`
+  virtual y `DeletionQueue` por frame en `VulkanDevice`, indexada por el último
+  frame empezado; el destructor del device hace `waitIdle` y vacía la cola.
+  `tests/test_deferred` (caja blanca, ve `luxel/src`) cubre cuatro casos.
+  `~VulkanSwapchain` espera a la GPU.
 - En curso: matemáticas propias en luxel/src/math. Plan de hitos en
   `docs/rhi-design.md`.
-- Siguiente (hito 4): destrucción diferida y revisión de `Ref::adopt` y del
-  contador inicial de `RefCounted`.
+- Siguiente (hito 5): modelo de enlace de recursos (bindless vs bind groups).
 - Pendiente (ventana/bucle): redibujar durante el arrastre del borde (bucle
   modal de Win32); con la ventana minimizada el bucle de la app gira sin dormir
   (esperar mensajes); el tamaño de la swapchain en `test_1` debería salir de la
-  ventana y no de un valor fijo.
+  ventana y no de un valor fijo; solo se admite una ventana por proceso (la
+  clase de ventana tiene nombre fijo y se registra en cada `create`), lo que
+  bloquea un editor multi-ventana.
 - Aparcado en la ventana (se retoma más adelante): Raw Input, DPI,
   UTF-8 en títulos, registro único de la clase de ventana.
 

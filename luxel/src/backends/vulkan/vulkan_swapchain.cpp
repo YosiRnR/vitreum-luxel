@@ -118,7 +118,10 @@ namespace luxel::vulkan
 		create(swapchain_desc.size);
 	}
 
-	VulkanSwapchain::~VulkanSwapchain() = default;
+	VulkanSwapchain::~VulkanSwapchain()
+	{
+		m_ref_device->wait_idle();
+	}
 
 	void VulkanSwapchain::create(Size2D size)
 	{

@@ -6,13 +6,66 @@
 #include <luxel/frame.h>
 #include "vulkan_common.h"
 #include "vulkan_frame.h"
+#include <mutex>
 #include <array>
+#include <vector>
 #include <string>
 #include <cstdint>
 
 namespace luxel::vulkan
 {
 	inline constexpr uint32_t k_frames_in_flight = 2;
+
+	class DeletionQueue
+	{
+	public:
+		// En algún momento quizás nos interese que el número de frames_in_flight sea otro distinto a 2
+		void init(uint32_t frames_in_flight = k_frames_in_flight) {
+			m_queues.resize(frames_in_flight);
+		}
+
+		void push(uint32_t frame_index, RefCounted* resource)
+		{
+			std::lock_guard<std::mutex> lock(m_mutex);
+			m_queues[frame_index].push_back(resource);
+		}
+
+		void flush(uint32_t frame_index)
+		{
+			std::vector<RefCounted*> local_queue;
+
+			{
+				std::lock_guard<std::mutex> lock(m_mutex);
+				local_queue.swap(m_queues[frame_index]);
+			}
+
+			for (RefCounted* resource : local_queue) {
+				delete resource;
+			}
+		}
+
+		void flush_all()
+		{
+			std::vector<RefCounted*> local_queue;
+
+			{
+				std::lock_guard<std::mutex> lock(m_mutex);
+				for (auto& queue : m_queues)
+				{					
+					local_queue.insert(local_queue.end(), queue.begin(), queue.end());
+					queue.clear();
+				}
+			}
+
+			for (RefCounted* resource : local_queue) {
+				delete resource;
+			}
+		}
+
+	private:
+		std::vector<std::vector<RefCounted*>> m_queues;
+		std::mutex m_mutex;
+	};
 
 	class VulkanDevice : public Device
 	{
@@ -36,7 +89,12 @@ namespace luxel::vulkan
 		};
 
 	public:
-		explicit VulkanDevice(const DeviceDescriptor&);
+		// Método estático que asegura que el objeto Ref siempre se cree así con el constructor de puntero crudo que incremente el contador de referencias adecuadamente
+		// Lo usan los métodos de factoría para no tener que declarar friend nada
+		static Ref<Device> create(const DeviceDescriptor& device_desc) {
+			return Ref<VulkanDevice>(new VulkanDevice(device_desc));
+		}
+		// Destructor
 		~VulkanDevice() override;
 
 		Backend backend() const override { return Backend::Vulkan; }
@@ -44,6 +102,10 @@ namespace luxel::vulkan
 		Frame* begin_frame(Swapchain&) override; // nullptr = no se pinta en este frame
 		void end_frame(Frame&) override;
 		void wait_idle() override;
+
+		void enqueue_destroy(RefCounted* resource) {
+			m_deletion_queue.push(m_active_frame_index, resource);
+		}
 
 		// Accesores públicos
 		const vk::raii::Instance& instance() const { return m_instance; }
@@ -55,6 +117,8 @@ namespace luxel::vulkan
 		const vk::raii::Device& logical_device() const { return m_logical_device; }
 
 	private:
+		explicit VulkanDevice(const DeviceDescriptor&); // Constructor privado para evitar que sea invocado desde fuera de las factorías de creación
+
 		// Vulkan RAII Context
 		vk::raii::Context m_context{};
 
@@ -77,6 +141,9 @@ namespace luxel::vulkan
 		uint32_t m_frame_index{ 0 };
 
 		VulkanFrame m_frame;
+
+		DeletionQueue m_deletion_queue;
+		uint32_t m_active_frame_index{ 0 };
 
 
 		// Función estática para imprimir por consola mensajes de Debug

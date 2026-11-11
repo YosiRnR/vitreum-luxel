@@ -10,7 +10,7 @@ namespace luxel
 		switch (device_desc.backend)
 		{
 		case Backend::Vulkan:
-			return Ref<Device>(new vulkan::VulkanDevice(device_desc));
+			return vulkan::VulkanDevice::create(device_desc);
 		}
 
 		// No debería ser alcanzable hasta que no se añadan más Backends en la enumeración

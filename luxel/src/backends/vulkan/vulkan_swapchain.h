@@ -13,7 +13,12 @@ namespace luxel::vulkan
 	class VulkanSwapchain : public Swapchain
 	{
 	public:
-		VulkanSwapchain(const Ref<VulkanDevice>& vk_device, const SwapchainDescriptor&);
+		inline static Ref<Swapchain> create_ref(const Ref<VulkanDevice>& vk_device, const SwapchainDescriptor& swapchain_desc)
+		{
+			return Ref<Swapchain>(new VulkanSwapchain(vk_device, swapchain_desc));
+
+		}
+		// Destructor
 		~VulkanSwapchain() override;
 
 		Size2D extent() const override;
@@ -34,6 +39,8 @@ namespace luxel::vulkan
 		bool                 needs_recreate() const { return m_needs_recreate; }
 
 	private:
+		VulkanSwapchain(const Ref<VulkanDevice>& vk_device, const SwapchainDescriptor&);
+
 		// Declarados en orden inverso de destrucción
 		Ref<VulkanDevice> m_ref_device;
 		vk::raii::SurfaceKHR m_surface{ nullptr };

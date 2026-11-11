@@ -18,8 +18,8 @@ namespace luxel::vulkan
 		assert(m_command_buffer != nullptr);
 
 		vk::RenderingAttachmentInfo color_attachment{
-			.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 			.imageView   = **m_image_view,
+			.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 			.loadOp      = vk::AttachmentLoadOp::eClear,
 			.storeOp     = vk::AttachmentStoreOp::eStore,
 			.clearValue  = vk::ClearColorValue{ desc.clear.r, desc.clear.g, desc.clear.b, desc.clear.a }

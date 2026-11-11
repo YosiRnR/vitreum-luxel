@@ -53,6 +53,7 @@ namespace luxel::vulkan
 
 	} // namespace
 
+
 	VulkanDevice::VulkanDevice(const DeviceDescriptor& device_desc)
 	{
 		// Creamos el objeto con el constructor por defecto para que ponga los valores por defecto
@@ -62,6 +63,8 @@ namespace luxel::vulkan
 
 		config.enable_validation_layers = device_desc.debug;
 
+		m_deletion_queue.init();
+
 		create_instance(config);
 		setup_debug_messenger();
 		pick_physical_device();
@@ -69,11 +72,15 @@ namespace luxel::vulkan
 		create_frames();
 	}
 
-	VulkanDevice::~VulkanDevice() = default;
+	VulkanDevice::~VulkanDevice()
+	{
+		m_logical_device.waitIdle();
+		m_deletion_queue.flush_all();
+	}
 
 	Ref<Swapchain> VulkanDevice::create_swapchain(const SwapchainDescriptor& swapchain_desc)
 	{
-		return Ref<Swapchain>(new VulkanSwapchain(Ref<VulkanDevice>(this), swapchain_desc));
+		return VulkanSwapchain::create_ref(Ref<VulkanDevice>(this), swapchain_desc);
 	}
 
 	Frame* VulkanDevice::begin_frame(Swapchain& swapchain)
@@ -88,6 +95,9 @@ namespace luxel::vulkan
 		if (vk_swapchain.needs_recreate() && !vk_swapchain.recreate()) {
 			return nullptr;
 		}
+
+		m_active_frame_index = m_frame_index;
+		m_deletion_queue.flush(m_frame_index);
 
 		auto index = vk_swapchain.acquire(m_frames_resources[m_frame_index].image_available);
 		if (index == std::nullopt) {
