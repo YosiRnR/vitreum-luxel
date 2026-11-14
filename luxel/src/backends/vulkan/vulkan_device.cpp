@@ -64,6 +64,7 @@ namespace luxel::vulkan
 		config.enable_validation_layers = device_desc.debug;
 
 		m_deletion_queue.init();
+		m_dev_maximus = device_desc.device_maximus;
 
 		create_instance(config);
 		setup_debug_messenger();
@@ -286,7 +287,7 @@ namespace luxel::vulkan
 
 	void VulkanDevice::pick_physical_device()
 	{
-		auto best_device = select_physical_device(m_instance);
+		auto best_device = select_physical_device(m_instance, m_dev_maximus);
 
 		// Guardamos los índices de las familias de colas del dispositivo elegido.
 		// Son necesarios para crear el dispositivo lógico y el command pool.

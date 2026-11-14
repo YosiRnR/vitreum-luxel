@@ -1,5 +1,6 @@
 #pragma once
 
+#include <luxel/device.h>
 #include "vulkan_common.h"
 #include <optional>
 #include <cstdint>
@@ -34,7 +35,7 @@ namespace luxel::vulkan
 	};
 
 	QueueFamilyIndices find_queue_families(const vk::raii::PhysicalDevice&);
-	PhysicalDeviceRate select_physical_device(const vk::raii::Instance&);
+	PhysicalDeviceRate select_physical_device(const vk::raii::Instance&, const RequestedDeviceMaximums&);
 	void print_physical_device_info(const vk::PhysicalDevice&);
 
 } // namespace luxel::vulkan

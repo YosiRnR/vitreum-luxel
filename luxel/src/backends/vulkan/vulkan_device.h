@@ -110,11 +110,12 @@ namespace luxel::vulkan
 		// Accesores públicos
 		const vk::raii::Instance& instance() const { return m_instance; }
 		const vk::raii::PhysicalDevice& physical_device() const { return m_physical_device; }
-		uint32_t present_family_index() const { return m_present_queue_family_index; }
+		uint32_t present_family_index()  const { return m_present_queue_family_index; }
 		uint32_t graphics_family_index() const { return m_graphics_queue_family_index; }
-		const vk::raii::Queue& graphics_queue() const { return m_graphics_queue;  }
-		const vk::raii::Queue& present_queue() const { return m_present_queue; }
+		const vk::raii::Queue& graphics_queue()  const { return m_graphics_queue;  }
+		const vk::raii::Queue& present_queue()   const { return m_present_queue; }
 		const vk::raii::Device& logical_device() const { return m_logical_device; }
+		const RequestedDeviceMaximums& dev_maximus() const { return m_dev_maximus; }
 
 	private:
 		explicit VulkanDevice(const DeviceDescriptor&); // Constructor privado para evitar que sea invocado desde fuera de las factorías de creación
@@ -130,6 +131,7 @@ namespace luxel::vulkan
 
 		vk::raii::PhysicalDevice m_physical_device{ nullptr };
 		vk::raii::Device          m_logical_device{ nullptr };
+		RequestedDeviceMaximums   m_dev_maximus{};
 
 		uint32_t m_graphics_queue_family_index{};
 		uint32_t  m_present_queue_family_index{};
@@ -144,6 +146,7 @@ namespace luxel::vulkan
 
 		DeletionQueue m_deletion_queue;
 		uint32_t m_active_frame_index{ 0 };
+
 
 
 		// Función estática para imprimir por consola mensajes de Debug

@@ -23,7 +23,11 @@ namespace luxel::vulkan
 			&vk::PhysicalDeviceVulkan12Features::descriptorBindingPartiallyBound,
 			&vk::PhysicalDeviceVulkan12Features::descriptorBindingStorageBufferUpdateAfterBind,
 			&vk::PhysicalDeviceVulkan12Features::descriptorBindingSampledImageUpdateAfterBind,
-			&vk::PhysicalDeviceVulkan12Features::descriptorBindingStorageImageUpdateAfterBind
+			&vk::PhysicalDeviceVulkan12Features::descriptorBindingStorageImageUpdateAfterBind,
+			// Permite actualizar o escribir en un hueco de la tabla de descriptores mientras la GPU está en uso ejecutando comandos
+			&vk::PhysicalDeviceVulkan12Features::descriptorBindingUpdateUnusedWhilePending,
+			// No la queremos, evitamos complejidades definiendo el array de texturas grande y ya está, al menos por ahora
+			//&vk::PhysicalDeviceVulkan12Features::descriptorBindingVariableDescriptorCount
 		};
 
 		// Tabla de Features de Vulkan 1.3
@@ -98,7 +102,7 @@ namespace luxel::vulkan
 				   all_supported(feature_chain.get<vk::PhysicalDeviceVulkan13Features>(), k_features13);
 		}
 
-		PhysicalDeviceRate rate_physical_device(const vk::raii::PhysicalDevice& physical_device)
+		PhysicalDeviceRate rate_physical_device(const vk::raii::PhysicalDevice& physical_device, const RequestedDeviceMaximums& requsted_maximus)
 		{
 			PhysicalDeviceRate device_rate{
 				.device = physical_device,
@@ -106,7 +110,13 @@ namespace luxel::vulkan
 				.indices = {}
 			};
 
-			auto device_props = physical_device.getProperties2();
+			auto props_chain = physical_device.getProperties2<
+				vk::PhysicalDeviceProperties2,
+				vk::PhysicalDeviceVulkan12Properties,
+				vk::PhysicalDeviceVulkan13Properties
+			>();
+
+			auto& device_props = props_chain.get<vk::PhysicalDeviceProperties2>();
 
 			if (device_props.properties.apiVersion < vk::ApiVersion13) {
 				return device_rate;
@@ -117,6 +127,26 @@ namespace luxel::vulkan
 			}
 
 			if (bool features_supported = supports_required_features(physical_device); !features_supported) {
+				return device_rate;
+			}
+
+			auto& vk12_props = props_chain.get<vk::PhysicalDeviceVulkan12Properties>();
+
+			if (vk12_props.maxDescriptorSetUpdateAfterBindSampledImages < requsted_maximus.max_textures ||
+				vk12_props.maxPerStageDescriptorUpdateAfterBindSampledImages < requsted_maximus.max_textures) {
+				return device_rate;
+			}
+			if (vk12_props.maxDescriptorSetUpdateAfterBindStorageBuffers < requsted_maximus.max_storage_buffers ||
+				vk12_props.maxPerStageDescriptorUpdateAfterBindStorageBuffers < requsted_maximus.max_storage_buffers) {
+				return device_rate;
+			}
+			if (vk12_props.maxDescriptorSetUpdateAfterBindSamplers < requsted_maximus.max_samplers ||
+				vk12_props.maxPerStageDescriptorUpdateAfterBindSamplers < requsted_maximus.max_samplers) {
+				return device_rate;
+			}
+
+			uint32_t total_resources = requsted_maximus.max_textures + requsted_maximus.max_storage_buffers + requsted_maximus.max_samplers;
+			if (device_props.properties.limits.maxPerStageResources < total_resources) {
 				return device_rate;
 			}
 
@@ -175,7 +205,7 @@ namespace luxel::vulkan
 		return indices;
 	}
 
-	PhysicalDeviceRate select_physical_device(const vk::raii::Instance& vk_instance)
+	PhysicalDeviceRate select_physical_device(const vk::raii::Instance& vk_instance, const RequestedDeviceMaximums& dev_maximums)
 	{
 		auto physical_devices = vk_instance.enumeratePhysicalDevices();
 
@@ -187,7 +217,7 @@ namespace luxel::vulkan
 
 		for (const auto& device : physical_devices)
 		{
-			auto cur_device = rate_physical_device(device);
+			auto cur_device = rate_physical_device(device, dev_maximums);
 
 			if (cur_device.score > best_device.score) {
 				best_device = std::move(cur_device);
