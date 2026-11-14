@@ -8,11 +8,13 @@
 #include "vulkan_platform.h"
 #include "vulkan_frame.h"
 #include "vulkan_physical_device.h"
+#include "vulkan_bindless_table.h"
 #include <set>
 #include <ranges>
 #include <vector>
 #include <format>
 #include <string>
+#include <memory>
 #include <cstring>
 #include <cstdint>
 #include <utility>
@@ -71,6 +73,8 @@ namespace luxel::vulkan
 		pick_physical_device();
 		create_logical_device();
 		create_frames();
+		// Podría ir en una función pero por simplificar ahora mismo lo dejo así
+		m_bindless_table = std::make_unique<VulkanBindlessTable>(m_logical_device, m_dev_maximus);
 	}
 
 	VulkanDevice::~VulkanDevice()

@@ -6,9 +6,11 @@
 #include <luxel/frame.h>
 #include "vulkan_common.h"
 #include "vulkan_frame.h"
+#include "vulkan_bindless_table.h"
 #include <mutex>
 #include <array>
 #include <vector>
+#include <memory>
 #include <string>
 #include <cstdint>
 
@@ -116,6 +118,7 @@ namespace luxel::vulkan
 		const vk::raii::Queue& present_queue()   const { return m_present_queue; }
 		const vk::raii::Device& logical_device() const { return m_logical_device; }
 		const RequestedDeviceMaximums& dev_maximus() const { return m_dev_maximus; }
+		VulkanBindlessTable& bindless_table() { return *m_bindless_table; }
 
 	private:
 		explicit VulkanDevice(const DeviceDescriptor&); // Constructor privado para evitar que sea invocado desde fuera de las factorías de creación
@@ -147,6 +150,8 @@ namespace luxel::vulkan
 		DeletionQueue m_deletion_queue;
 		uint32_t m_active_frame_index{ 0 };
 
+		// Tiene que destruirse antes que el m_logical_device así que tiene que venir debajo de él
+		std::unique_ptr<VulkanBindlessTable> m_bindless_table; 
 
 
 		// Función estática para imprimir por consola mensajes de Debug

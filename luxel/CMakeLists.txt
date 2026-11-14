@@ -15,7 +15,7 @@ add_library(luxel STATIC
     "src/backends/vulkan/vulkan_device.cpp"
     "src/backends/vulkan/vulkan_physical_device.h"
     "src/backends/vulkan/vulkan_physical_device.cpp"
-    "include/luxel/swapchain.h" "include/luxel/frame.h" "include/luxel/command_list.h" "src/backends/vulkan/vulkan_frame.h" "src/backends/vulkan/vulkan_command_list.h" "src/backends/vulkan/vulkan_command_list.cpp" )
+    "include/luxel/swapchain.h" "include/luxel/frame.h" "include/luxel/command_list.h" "src/backends/vulkan/vulkan_frame.h" "src/backends/vulkan/vulkan_command_list.h" "src/backends/vulkan/vulkan_command_list.cpp"  "src/slot_allocator.h" "src/backends/vulkan/vulkan_bindless_table.h" "src/backends/vulkan/vulkan_bindless_table.cpp")
 
 target_include_directories(luxel
     PUBLIC

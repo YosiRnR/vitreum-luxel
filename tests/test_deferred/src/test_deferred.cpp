@@ -11,6 +11,7 @@
 
 #include <iostream>
 #include <utility>
+#include <cstdint>
 
 namespace
 {
@@ -171,6 +172,34 @@ static void test_released_during_frame(vitreum::Window& window)
 	CHECK(destroyed);
 }
 
+// 5. Solicitar huecos de Sampler en el Descriptor de Samplers
+static void test_descriptor_set_sampler_slots(vitreum::Window& window)
+{
+	std::cout << "[5] solicitar huecos de Sampler en el descriptor de samplers\n";
+	FrameRig rig(window);
+
+	auto* frame = rig.begin();
+	CHECK(frame != nullptr);
+
+	vk::SamplerCreateInfo sampler_info{
+
+	};
+	vk::raii::Sampler test_sampler = vk::raii::Sampler(static_cast<luxel::vulkan::VulkanDevice*>(rig.device.get())->logical_device(), sampler_info);
+	uint32_t slot1 = static_cast<luxel::vulkan::VulkanDevice*>(rig.device.get())->bindless_table().allocate_sampler_slot(*test_sampler);
+	CHECK(slot1 != 0);
+	uint32_t slot2 = static_cast<luxel::vulkan::VulkanDevice*>(rig.device.get())->bindless_table().allocate_sampler_slot(*test_sampler);
+	CHECK(slot2 != 0 && slot1 != slot2);
+	static_cast<luxel::vulkan::VulkanDevice*>(rig.device.get())->bindless_table().free_sampler_slot(slot1);
+	uint32_t slot3 = static_cast<luxel::vulkan::VulkanDevice*>(rig.device.get())->bindless_table().allocate_sampler_slot(*test_sampler);
+	CHECK(slot3 == slot1);
+
+	if (frame) { rig.end(*frame); }
+
+	CHECK(rig.run_frame());
+
+	CHECK(rig.run_frame());
+}
+
 int main()
 {
 	test_not_destroyed_immediately();
@@ -183,6 +212,8 @@ int main()
 
 	test_released_between_frames(window);
 	test_released_during_frame(window);
+
+	test_descriptor_set_sampler_slots(window);
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;
