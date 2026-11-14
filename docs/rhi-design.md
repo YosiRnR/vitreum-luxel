@@ -99,7 +99,9 @@ El `Device` es una sola interfaz aunque por dentro tenga instancia, físico y l�
 
 ## Modelo de enlace de recursos
 
-Propuesta: bindless. Cada buffer, textura y sampler recibe al crearse un índice en una tabla global, y el shader recibe esos índices por push constants. El usuario nunca crea ni enlaza descriptor sets.
+**Decisión (hito 5): bindless.** Se prioriza aprender el modelo moderno; OpenGL queda como modo degradado para más adelante (decisión 3) y no se pasa antes por el modelo clásico, porque bindless sigue usando descriptor sets, layout, pool y `vkUpdateDescriptorSets`: solo cambia que hay un único set enorme y nunca cambia. Los bind groups de WebGPU quedan descartados por ahora.
+
+Cada buffer, textura y sampler recibe al crearse un índice en una tabla global, y el shader recibe esos índices por push constants. El usuario nunca crea ni enlaza descriptor sets.
 
 **Por qué se complica el modelo clásico.** En Vulkan clásico cada pipeline tiene su layout y cada material sus descriptor sets, agrupados por frecuencia (por frame, por material, por draw). Eso obliga a mantener tres cosas sincronizadas: lo que declara el shader, el layout del pipeline y los sets que enlaza el código. Cuando el proyecto crece, la mayoría de los errores nacen ahí. Bindless elimina esa triple coincidencia: solo hay un layout y no cambia nunca.
 
@@ -163,6 +165,14 @@ Siete hitos pequeños, cada uno con un resultado que se puede ejecutar; el prime
 6. **`Buffer` con subida por staging y asignador temporal por frame.** Triángulo con *vertex pulling* y una matriz por frame (aquí entran las matemáticas de `luxel/src/math`).
 7. **`Texture` y `Sampler`.** Un quad texturizado.
 
+Pasos del hito 5 (cada uno compila y se ejecuta sin avisos de validación):
+
+- **5a. Features de descriptor indexing (hecho).** Exigir y activar en `VulkanDevice` (tablas de features existentes): `descriptorBindingPartiallyBound`, `runtimeDescriptorArray`, `shaderSampledImageArrayNonUniformIndexing`, `descriptorBindingSampledImageUpdateAfterBind`, `descriptorBindingUpdateUnusedWhilePending` y los equivalentes de storage buffer. Los tamaños de la tabla son configurables en `DeviceDescriptor` (`device_maximus`) y se validan contra los límites de la GPU al elegirla.
+- **5b. Tabla global (hecho).** `VulkanBindlessTable`: pool con `UPDATE_AFTER_BIND`, set layout con arrays de tamaño fijo (texturas, samplers, storage buffers), un set, y lista de huecos libres con liberación diferida (reutiliza `DeletionQueue`).
+- **5c. Pipeline layout global (hecho).** Un `VkPipelineLayout` con esa tabla y un rango de push constants; test de caja blanca de asignar y liberar huecos.
+- **5d. `Shader` y `GraphicsPipeline`.** Módulos SPIR-V (decisión 2: lenguaje de shaders) y pipeline con dynamic rendering usando el layout global.
+- **5e. Triángulo** con vértices fijos en el shader, enlazando la tabla una vez por lista de comandos.
+
 Al cerrar cada hito: ejecutar con validación sin avisos y repasar en papel cómo sería cada función nueva en D3D12 y en OpenGL.
 
 ## Decisiones abiertas
@@ -172,7 +182,7 @@ Seis decisiones son tuyas; ninguna bloquea el hito 1, pero conviene cerrar la 1 
 | # | Decisión | Opciones | Mi inclinación |
 | --- | --- | --- | --- |
 | 1 | Cómo se referencian los recursos | `Ref<T>` a interfaces / handles con generación (`BufferHandle{index, gen}`) | `Ref<T>`: ya lo tienes y es más fácil de aprender; los handles valen la pena con miles de objetos |
-| 2 | Lenguaje de shaders | GLSL → SPIR-V (`glslc`) / HLSL → SPIR-V y DXIL (`dxc`) | HLSL con `dxc` si D3D12 va en serio: un solo fuente para ambos backends |
+| 2 | Lenguaje de shaders | GLSL → SPIR-V (`glslc`) / HLSL → SPIR-V y DXIL (`dxc`) | **Decidido (hito 5): HLSL con `dxc`.** Un solo fuente para ambos backends; `dxc` viene en el Vulkan SDK |
 | 3 | OpenGL sin bindless | Modo degradado con slots fijos / exigir `ARB_bindless_texture` / no soportar OpenGL | Modo degradado, y más adelante |
 | 4 | Frames en vuelo | Fijo en 2 / configurable | Fijo en 2 |
 | 5 | Errores | Excepciones / `std::expected` (C++23) / códigos propios | Excepciones al crear, nada en el bucle de frame |

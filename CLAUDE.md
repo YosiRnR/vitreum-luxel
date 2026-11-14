@@ -34,8 +34,10 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   `create_device()`, que es lo único que conoce a `VulkanDevice`.
 - `vitreum` y `luxel` no dependen una de otra: la aplicación convierte
   `NativeWindowHandle` -> `luxel::WindowHandle` con `to_luxel()`.
-- Decisiones abiertas: modelo de enlace (bindless vs bind groups de WebGPU,
-  se decide en el hito 5) y política de errores.
+- Decidido en el hito 5: modelo de enlace bindless (descartados los bind groups
+  de WebGPU por ahora) y shaders en HLSL compilados con `dxc` (SPIR-V; DXIL si
+  llega D3D12).
+- Decisiones abiertas: política de errores y OpenGL sin bindless (modo degradado).
 
 ## Estado
 - Hecho: capa de ventana Win32, cola de eventos (pop_event con índice),
@@ -64,9 +66,23 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   frame empezado; el destructor del device hace `waitIdle` y vacía la cola.
   `tests/test_deferred` (caja blanca, ve `luxel/src`) cubre cuatro casos.
   `~VulkanSwapchain` espera a la GPU.
+  Hito 5 del RHI (5a-5c hechos): bindless. `DeviceDescriptor::device_maximus`
+  (`RequestedDeviceMaximums`: texturas, storage buffers y samplers) con topes
+  del motor validados en `create_device()`; `rate_physical_device` descarta las
+  GPU cuyos límites (por set, por etapa y `maxPerStageResources`) no los cubren.
+  Features de descriptor indexing exigidas en `k_features12`.
+  `luxel/src/slot_allocator.h` (`SlotAllocator`: índices de tamaño fijo, el 0
+  reservado como inválido, con mutex; comprobaciones de doble free bajo
+  `#ifndef NDEBUG`) probado en `tests/test_free`. `VulkanBindlessTable`: layout
+  con 3 bindings (storage buffers, samplers, texturas) con flags
+  `UpdateAfterBind`, pool, un set, `allocate_*_slot`/`free_*_slot` con escritura
+  inmediata del descriptor y `VkPipelineLayout` global (set + 128 bytes de push
+  constants). Probada con un sampler en `test_deferred`.
 - En curso: matemáticas propias en luxel/src/math. Plan de hitos en
   `docs/rhi-design.md`.
-- Siguiente (hito 5): modelo de enlace de recursos (bindless vs bind groups).
+- Siguiente (hito 5): 5d `Shader` y `GraphicsPipeline` (HLSL con `dxc`) y 5e
+  triángulo con vértices fijos. Los destructores de `Texture`, `Sampler` y
+  `Buffer` (hitos 6 y 7) devolverán su hueco a la tabla.
 - Pendiente (ventana/bucle): redibujar durante el arrastre del borde (bucle
   modal de Win32); con la ventana minimizada el bucle de la app gira sin dormir
   (esperar mensajes); el tamaño de la swapchain en `test_1` debería salir de la
