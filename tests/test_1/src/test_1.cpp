@@ -107,7 +107,10 @@ int main(int argc, char** argv)
 		}
 
 		frame->commands().begin_rendering({ .clear = { 1.0f, 0.0f, 0.0f, 1.0f } });
+		frame->commands().bind_pipeline(*pipeline);
+		frame->commands().draw(3);
 		frame->commands().end_rendering();
+
 		render_device->end_frame(*frame);
 
 		static luxel::Size2D last{};

@@ -14,6 +14,9 @@ namespace luxel::vulkan
 			return Ref<GraphicsPipeline>(new VulkanGraphicsPipeline(vk_device, desc));
 		}
 
+		// Accesores públicos
+		const vk::raii::Pipeline& pipeline() const { return m_pipeline; }
+
 	private:
 		VulkanGraphicsPipeline(const Ref<VulkanDevice>& vk_device, const GraphicsPipelineDescriptor&);
 

@@ -1,6 +1,8 @@
 #include "vulkan_command_list.h"
 #include <luxel/command_list.h>
+#include "vulkan_graphics_pipeline.h"
 #include "vulkan_common.h"
+#include <cstdint>
 #include <cassert>
 
 namespace luxel::vulkan
@@ -32,6 +34,26 @@ namespace luxel::vulkan
 			.pColorAttachments    = &color_attachment
 		};
 
+		m_command_buffer->setViewport(
+			0,
+			vk::Viewport{
+				.x = 0.0f,
+				.y = 0.0f,
+				.width  = static_cast<float>(m_extent.width),
+				.height = static_cast<float>(m_extent.height),
+				.minDepth = 0.0f,
+				.maxDepth = 1.0f
+			}
+		);
+
+		m_command_buffer->setScissor(
+			0,
+			vk::Rect2D{
+				.offset = { 0, 0 },
+				.extent = m_extent
+			}
+		);
+
 		m_command_buffer->beginRendering(rendering_info);
 	}
 
@@ -40,6 +62,20 @@ namespace luxel::vulkan
 		assert(m_command_buffer != nullptr);
 
 		m_command_buffer->endRendering();
+	}
+
+	void VulkanCommandList::bind_pipeline(GraphicsPipeline& pipeline)
+	{
+		VulkanGraphicsPipeline& vk_pipeline = static_cast<VulkanGraphicsPipeline&>(pipeline);
+
+		m_command_buffer->bindPipeline(vk::PipelineBindPoint::eGraphics, vk_pipeline.pipeline());
+	}
+
+	void VulkanCommandList::draw(uint32_t num_vertices)
+	{
+		assert(m_command_buffer != nullptr);
+
+		m_command_buffer->draw(num_vertices, 1, 0, 0);
 	}
 
 } // namespace luxel::vulkan

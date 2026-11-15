@@ -141,6 +141,15 @@ namespace luxel::vulkan
 		vk::DependencyInfo dep{ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier };
 		frame_res.command_buffer.pipelineBarrier2(dep);
 
+		// Enlace del Set
+		frame_res.command_buffer.bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			*m_bindless_table->pipeline_layout(),
+			0,
+			*m_bindless_table->descriptor_set(),
+			nullptr
+		);
+
 		m_frame.reset(
 			frame_res.command_buffer,
 			vk_swapchain.image(index.value()),

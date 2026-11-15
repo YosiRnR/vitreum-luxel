@@ -2,6 +2,7 @@
 
 #include <luxel/command_list.h>
 #include "vulkan_common.h"
+#include <cstdint>
 
 namespace luxel::vulkan
 {
@@ -14,6 +15,9 @@ namespace luxel::vulkan
 
 		void begin_rendering(const RenderingDescriptor&) override;
 		void end_rendering() override;
+
+		void bind_pipeline(GraphicsPipeline&) override;
+		void draw(uint32_t num_vertices) override;
 
 		vk::raii::CommandBuffer* m_command_buffer{ nullptr };
 		vk::Image m_image{};
