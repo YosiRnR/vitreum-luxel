@@ -176,7 +176,7 @@ Pasos del hito 5 (cada uno compila y se ejecuta sin avisos de validación):
   - 5d-2 (hecho): `GraphicsPipelineDescriptor`, interfaz pública `GraphicsPipeline` y `Device::create_graphics_pipeline()`.
   - 5d-3 (hecho): `VulkanGraphicsPipeline` con módulos temporales, los bloques de estado y dynamic rendering, usando el layout global.
   - 5d-4 (opcional): compilar los shaders desde CMake.
-- **5e. Triángulo** con vértices fijos en el shader, enlazando la tabla una vez por lista de comandos.
+- **5e. Triángulo** (hecho) con vértices fijos en el shader, enlazando la tabla una vez por lista de comandos (en cada `begin_frame`, porque el pool se resetea). Viewport y scissor se fijan en `begin_rendering`; `CommandList` expone `bind_pipeline` y `draw`.
 
 Al cerrar cada hito: ejecutar con validación sin avisos y repasar en papel cómo sería cada función nueva en D3D12 y en OpenGL.
 

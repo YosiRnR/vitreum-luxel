@@ -90,10 +90,16 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   (`.hlsl` versionados, `.spv` en `.gitignore`, compilados a mano con `dxc`).
 - En curso: matemáticas propias en luxel/src/math. Plan de hitos en
   `docs/rhi-design.md`.
-- Siguiente (hito 5): 5e triángulo con vértices fijos (en `CommandList`:
-  enlazar pipeline y tabla una vez por lista, viewport/scissor, draw; probar
-  con `test_1`). Opcional 5d-4: compilar shaders desde CMake. Los destructores de `Texture`, `Sampler` y
-  `Buffer` (hitos 6 y 7) devolverán su hueco a la tabla.
+  5e hecho: triángulo en `test_1` con vértices fijos en el shader. El set
+  bindless se enlaza en `VulkanDevice::begin_frame` (hay que hacerlo en cada
+  frame: el pool de comandos se resetea), viewport y scissor se fijan en
+  `begin_rendering` y `CommandList` tiene `bind_pipeline` y `draw`. Con
+  esto el hito 5 queda completo, salvo el 5d-4 opcional.
+- Siguiente: hitos 6 y 7 (`Buffer`, `Texture` y `Sampler`); sus destructores
+  devolverán su hueco a la tabla. Opcional 5d-4: compilar shaders desde
+  CMake. Los shaders propios del motor irán incrustados en el ejecutable
+  (hoy `test_1` y `test_deferred` leen los `.spv` de disco con rutas
+  relativas/absolutas).
 - Pendiente (ventana/bucle): redibujar durante el arrastre del borde (bucle
   modal de Win32); con la ventana minimizada el bucle de la app gira sin dormir
   (esperar mensajes); el tamaño de la swapchain en `test_1` debería salir de la
