@@ -5,18 +5,6 @@
 
 namespace luxel
 {
-	// Formatos portables. Cada backend los traduce a su equivalente nativo.
-	enum class Format : uint8_t
-	{
-		Undefined = 0,
-		R8G8B8A8_UNorm,
-		R8G8B8A8_SRGB,
-		B8G8R8A8_UNorm,
-		B8G8R8A8_SRGB,
-		D32_Float,
-		D24_UNorm_S8_UInt
-	};
-
 	struct SwapchainDescriptor
 	{
 		WindowHandle window;

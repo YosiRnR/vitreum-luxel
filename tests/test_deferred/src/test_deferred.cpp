@@ -9,9 +9,14 @@
 #include <luxel/luxel.h>
 #include "backends/vulkan/vulkan_device.h"
 
+#include <filesystem>
+#include <stdexcept>
 #include <iostream>
 #include <utility>
 #include <cstdint>
+#include <fstream>
+#include <vector>
+#include <span>
 
 namespace
 {
@@ -103,6 +108,23 @@ struct FrameRig
 	luxel::Frame* begin() { return device->begin_frame(*swapchain); }
 	void end(luxel::Frame& f) { device->end_frame(f); }
 };
+
+static std::vector<uint32_t> read_binary_file(const std::filesystem::path& path)
+{
+	std::ifstream file(path, std::ios::ate | std::ios::binary);
+	if (!file) {
+		throw std::runtime_error("No se pudo abrir el archivo: " + path.string());
+	}
+
+	const auto size = static_cast<size_t>(file.tellg());
+	if (size % 4 != 0) {
+		throw std::runtime_error("El tamaño del fichero SPV de shaders debe ser múltiplo de 4 para ser correcto");
+	}
+	std::vector<uint32_t> data(size / 4);
+	file.seekg(0);
+	file.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(size));
+	return data;
+}
 
 // 1. Soltar el ultimo Ref no destruye en el acto: va a la cola.
 static void test_not_destroyed_immediately()
@@ -200,10 +222,28 @@ static void test_descriptor_set_sampler_slots(vitreum::Window& window)
 	CHECK(rig.run_frame());
 }
 
+// 6. Crear y soltar Pipeline
+static void test_pipeline()
+{
+	std::cout << "[6] crear y soltar pipeline\n";
+	auto device = make_device();
+	{
+		auto vs_code = read_binary_file("../../../../../luxel/shaders/shader_vs.spv");
+		auto ps_code = read_binary_file("../../../../../luxel/shaders/shader_ps.spv");
+		auto pipeline = static_cast<luxel::vulkan::VulkanDevice*>(device.get())->create_graphics_pipeline({
+			.vs_byte_code = std::span<uint32_t>(vs_code),
+			.ps_byte_code = std::span<uint32_t>(ps_code),
+			.format = luxel::Format::B8G8R8A8_SRGB
+		});
+	}
+	CHECK(device->ref_count() == 1);
+}
+
 int main()
 {
 	test_not_destroyed_immediately();
 	test_device_destroyed_by_last_resource();
+
 	vitreum::Window window;
 	if (!window.create({ "test_deferred", { 640, 480 } })) {
 		std::cout << "No se pudo crear la ventana\n";
@@ -214,6 +254,7 @@ int main()
 	test_released_during_frame(window);
 
 	test_descriptor_set_sampler_slots(window);
+	test_pipeline();
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;

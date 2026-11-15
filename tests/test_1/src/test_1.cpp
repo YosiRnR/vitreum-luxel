@@ -1,8 +1,13 @@
 #include <vitreum/vitreum.h>
 #include <luxel/luxel.h>
+#include <filesystem>
+#include <stdexcept>
 #include <iostream>
+#include <fstream>
 #include <cstdint>
+#include <vector>
 #include <format>
+#include <span>
 
 static luxel::WindowHandle to_luxel(const vitreum::NativeWindowHandle& win_handle)
 {
@@ -27,6 +32,23 @@ static luxel::WindowHandle to_luxel(const vitreum::NativeWindowHandle& win_handl
 	return result;
 }
 
+static std::vector<uint32_t> read_binary_file(const std::filesystem::path& path)
+{
+	std::ifstream file(path, std::ios::ate | std::ios::binary);
+	if (!file) {
+		throw std::runtime_error("No se pudo abrir el archivo: " + path.string());
+	}
+
+	const auto size = static_cast<size_t>(file.tellg());
+	if (size % 4 != 0) {
+		throw std::runtime_error("El tamaño del fichero SPV de shaders debe ser múltiplo de 4 para ser correcto");
+	}
+	std::vector<uint32_t> data(size / 4);
+	file.seekg(0);
+	file.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(size));
+	return data;
+}
+
 int main(int argc, char** argv)
 {
 	vitreum::Window main_wnd{};
@@ -41,6 +63,14 @@ int main(int argc, char** argv)
 		.window = to_luxel(main_wnd.native_handle()),
 		.size   = { static_cast<uint32_t>(main_wnd.width()), static_cast<uint32_t>(main_wnd.height()) },
 		.vsync  = true
+	});
+
+	auto vs_code = read_binary_file("../../../../../luxel/shaders/shader_vs.spv");
+	auto ps_code = read_binary_file("../../../../../luxel/shaders/shader_ps.spv");
+	auto pipeline = render_device->create_graphics_pipeline({
+		.vs_byte_code = std::span<uint32_t>(vs_code),
+		.ps_byte_code = std::span<uint32_t>(ps_code),
+		.format       = swapchain->color_format()
 	});
 
 	auto extent       = swapchain->extent();

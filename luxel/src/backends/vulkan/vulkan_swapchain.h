@@ -13,11 +13,10 @@ namespace luxel::vulkan
 	class VulkanSwapchain : public Swapchain
 	{
 	public:
-		inline static Ref<Swapchain> create_ref(const Ref<VulkanDevice>& vk_device, const SwapchainDescriptor& swapchain_desc)
-		{
+		static Ref<Swapchain> create_ref(const Ref<VulkanDevice>& vk_device, const SwapchainDescriptor& swapchain_desc) {
 			return Ref<Swapchain>(new VulkanSwapchain(vk_device, swapchain_desc));
-
 		}
+
 		// Destructor
 		~VulkanSwapchain() override;
 
@@ -31,12 +30,12 @@ namespace luxel::vulkan
 		void present(const vk::raii::Queue&, uint32_t);
 
 		// Accesores públicos
-		vk::Image            image(uint32_t index) const { return m_images[index]; }
+		vk::Image    image(uint32_t index) const { return m_images[index]; }
 		const vk::raii::ImageView& image_view(uint32_t index) const { return m_image_views[index]; }
 		const vk::raii::Semaphore& render_finished(uint32_t index) const { return m_render_finished[index]; }
-		vk::Format           vk_format() const { return m_format; }
-		vk::Extent2D         vk_extent() const { return m_extent; }
-		bool                 needs_recreate() const { return m_needs_recreate; }
+		vk::Format   vk_format() const { return m_format; }
+		vk::Extent2D vk_extent() const { return m_extent; }
+		bool         needs_recreate() const { return m_needs_recreate; }
 
 	private:
 		VulkanSwapchain(const Ref<VulkanDevice>& vk_device, const SwapchainDescriptor&);

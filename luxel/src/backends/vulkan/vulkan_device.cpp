@@ -1,10 +1,12 @@
 #include <luxel/types.h>
 #include <luxel/device.h>
 #include <luxel/swapchain.h>
+#include <luxel/graphics_pipeline.h>
 #include <luxel/frame.h>
 #include "vulkan_common.h"
 #include "vulkan_device.h"
 #include "vulkan_swapchain.h"
+#include "vulkan_graphics_pipeline.h"
 #include "vulkan_platform.h"
 #include "vulkan_frame.h"
 #include "vulkan_physical_device.h"
@@ -83,9 +85,19 @@ namespace luxel::vulkan
 		m_deletion_queue.flush_all();
 	}
 
-	Ref<Swapchain> VulkanDevice::create_swapchain(const SwapchainDescriptor& swapchain_desc)
-	{
+	Ref<Swapchain> VulkanDevice::create_swapchain(const SwapchainDescriptor& swapchain_desc) {
 		return VulkanSwapchain::create_ref(Ref<VulkanDevice>(this), swapchain_desc);
+	}
+
+	Ref<GraphicsPipeline> VulkanDevice::create_graphics_pipeline(const GraphicsPipelineDescriptor& pipeline_desc)
+	{
+		if (pipeline_desc.format == Format::Undefined) {
+			throw std::runtime_error("Es necesario establecer un formato de color para poder crear el pipeline. Usa el mismo que para el swapchain");
+		}
+		if (pipeline_desc.vs_byte_code.empty() || pipeline_desc.ps_byte_code.empty()) {
+			throw std::runtime_error("Es necesario tener un Vertex Shader y un Pixel/Fragment Shader para poder crear el pipeline");
+		}
+		return VulkanGraphicsPipeline::create(Ref<VulkanDevice>(this), pipeline_desc);
 	}
 
 	Frame* VulkanDevice::begin_frame(Swapchain& swapchain)

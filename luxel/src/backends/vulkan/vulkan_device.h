@@ -3,6 +3,7 @@
 #include <luxel/types.h>
 #include <luxel/device.h>
 #include <luxel/swapchain.h>
+#include <luxel/graphics_pipeline.h>
 #include <luxel/frame.h>
 #include "vulkan_common.h"
 #include "vulkan_frame.h"
@@ -101,6 +102,7 @@ namespace luxel::vulkan
 
 		Backend backend() const override { return Backend::Vulkan; }
 		Ref<Swapchain> create_swapchain(const SwapchainDescriptor&) override;
+		Ref<GraphicsPipeline> create_graphics_pipeline(const GraphicsPipelineDescriptor&) override;
 		Frame* begin_frame(Swapchain&) override; // nullptr = no se pinta en este frame
 		void end_frame(Frame&) override;
 		void wait_idle() override;
@@ -112,11 +114,11 @@ namespace luxel::vulkan
 		// Accesores públicos
 		const vk::raii::Instance& instance() const { return m_instance; }
 		const vk::raii::PhysicalDevice& physical_device() const { return m_physical_device; }
+		const vk::raii::Device& logical_device() const { return m_logical_device; }
 		uint32_t present_family_index()  const { return m_present_queue_family_index; }
 		uint32_t graphics_family_index() const { return m_graphics_queue_family_index; }
 		const vk::raii::Queue& graphics_queue()  const { return m_graphics_queue;  }
 		const vk::raii::Queue& present_queue()   const { return m_present_queue; }
-		const vk::raii::Device& logical_device() const { return m_logical_device; }
 		const RequestedDeviceMaximums& dev_maximus() const { return m_dev_maximus; }
 		VulkanBindlessTable& bindless_table() { return *m_bindless_table; }
 

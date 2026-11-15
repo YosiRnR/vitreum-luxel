@@ -1,6 +1,7 @@
 #pragma once
 #include <luxel/types.h>
 #include <luxel/swapchain.h>
+#include <luxel/graphics_pipeline.h>
 #include <luxel/frame.h>
 #include <cstdint>
 
@@ -35,6 +36,7 @@ namespace luxel
 
 		virtual Backend backend() const = 0;
 		virtual Ref<Swapchain> create_swapchain(const SwapchainDescriptor&) = 0;
+		virtual Ref<GraphicsPipeline> create_graphics_pipeline(const GraphicsPipelineDescriptor&) = 0;
 		virtual Frame* begin_frame(Swapchain&) = 0; // nullptr = no se pinta en este frame
 		virtual void end_frame(Frame&) = 0;
 		virtual void wait_idle() = 0;
