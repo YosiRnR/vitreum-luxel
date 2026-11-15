@@ -78,10 +78,21 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   `UpdateAfterBind`, pool, un set, `allocate_*_slot`/`free_*_slot` con escritura
   inmediata del descriptor y `VkPipelineLayout` global (set + 128 bytes de push
   constants). Probada con un sampler en `test_deferred`.
+  5d hecho: `GraphicsPipeline` (sin objeto `Shader` público: el descriptor
+  lleva el SPIR-V de cada etapa como `span<const uint32_t>`, nombres de
+  entrada `vs_main`/`ps_main`, `Format` y `PrimitiveTopology`, que viven en
+  `types.h`) creado con `Device::create_graphics_pipeline()` (valida el
+  formato). `VulkanGraphicsPipeline` crea módulos temporales, usa dynamic
+  rendering, viewport/scissor dinámicos y el layout global de la tabla.
+  Destrucción diferida: `on_zero_refs()` saca el `Ref` del device a un local
+  antes de encolar (si no, el pipeline en cola mantendría vivo al device);
+  probado en `test_deferred` con `ref_count()`. Shaders en `luxel/shaders`
+  (`.hlsl` versionados, `.spv` en `.gitignore`, compilados a mano con `dxc`).
 - En curso: matemáticas propias en luxel/src/math. Plan de hitos en
   `docs/rhi-design.md`.
-- Siguiente (hito 5): 5d `Shader` y `GraphicsPipeline` (HLSL con `dxc`) y 5e
-  triángulo con vértices fijos. Los destructores de `Texture`, `Sampler` y
+- Siguiente (hito 5): 5e triángulo con vértices fijos (en `CommandList`:
+  enlazar pipeline y tabla una vez por lista, viewport/scissor, draw; probar
+  con `test_1`). Opcional 5d-4: compilar shaders desde CMake. Los destructores de `Texture`, `Sampler` y
   `Buffer` (hitos 6 y 7) devolverán su hueco a la tabla.
 - Pendiente (ventana/bucle): redibujar durante el arrastre del borde (bucle
   modal de Win32); con la ventana minimizada el bucle de la app gira sin dormir

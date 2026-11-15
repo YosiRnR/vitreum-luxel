@@ -86,8 +86,9 @@ Todo nace del `Device` y se devuelve como `Ref<T>` a una interfaz abstracta; cua
 | `Buffer` | Vértices, índices, datos | `Device` | `Ref` + destrucción diferida | VkBuffer + memoria | Resource | Buffer object |
 | `Texture` | Imágenes, render targets | `Device` | `Ref` + destrucción diferida | VkImage + vista | Resource + SRV | Texture object |
 | `Sampler` | Filtrado y direccionamiento | `Device` | `Ref` + destrucción diferida | VkSampler | Sampler heap | Sampler object |
-| `Shader` | Bytecode de una etapa | `Device` | Hasta crear los pipelines | Shader module | Blob DXIL | Shader object |
-| `GraphicsPipeline` | Estado completo de dibujo | `Device` | `Ref` + destrucción diferida | VkPipeline (layout global) | PSO (root signature global) | Programa + estado emulado |
+| `GraphicsPipeline` | Estado completo de dibujo; recibe el bytecode de cada etapa en su descriptor | `Device` | `Ref` + destrucción diferida | VkPipeline (layout global); los `VkShaderModule` son temporales dentro de la creación | PSO (root signature global) | Programa + estado emulado |
+
+No hay un objeto `Shader` público: D3D12 crea el PSO con los bytes de cada etapa, OpenGL compila y enlaza de una vez, y el `VkShaderModule` solo hace falta mientras se crea el pipeline. El núcleo de luxel solo recibe bytes ya cargados (no lee ficheros); los shaders propios del motor se incrustarán en el ejecutable y los del usuario se cargan fuera del núcleo. Si compartir módulos entre pipelines llegara a importar, se añade un `Shader` encima sin romper la API.
 
 Tres reglas de propiedad:
 
@@ -161,7 +162,7 @@ Siete hitos pequeños, cada uno con un resultado que se puede ejecutar; el prime
 2. **Dispositivo físico y lógico.** `VulkanDevice` absorbe `VulkanContext`, elige la GPU (colas gráfica y de presentación) y crea el dispositivo 1.3 (dynamic rendering, synchronization2, descriptor indexing).
 3. **`Swapchain` y el bucle de frame.** La superficie pasa a vivir aquí y el `WindowHandle` sale de `DeviceDesc`. `begin_frame` / `end_frame` y limpiar a un color. Incluye cerrar el pendiente de la ventana con `WM_SIZE` minimizado y el tamaño de cliente.
 4. **Destrucción diferida y `Ref`.** Revisar `Ref::adopt` y el contador inicial antes de usarlo en serio.
-5. **Tabla bindless, `Shader` y `GraphicsPipeline`.** Triángulo con vértices fijos en el shader.
+5. **Tabla bindless y `GraphicsPipeline`.** Triángulo con vértices fijos en el shader.
 6. **`Buffer` con subida por staging y asignador temporal por frame.** Triángulo con *vertex pulling* y una matriz por frame (aquí entran las matemáticas de `luxel/src/math`).
 7. **`Texture` y `Sampler`.** Un quad texturizado.
 
@@ -170,7 +171,11 @@ Pasos del hito 5 (cada uno compila y se ejecuta sin avisos de validación):
 - **5a. Features de descriptor indexing (hecho).** Exigir y activar en `VulkanDevice` (tablas de features existentes): `descriptorBindingPartiallyBound`, `runtimeDescriptorArray`, `shaderSampledImageArrayNonUniformIndexing`, `descriptorBindingSampledImageUpdateAfterBind`, `descriptorBindingUpdateUnusedWhilePending` y los equivalentes de storage buffer. Los tamaños de la tabla son configurables en `DeviceDescriptor` (`device_maximus`) y se validan contra los límites de la GPU al elegirla.
 - **5b. Tabla global (hecho).** `VulkanBindlessTable`: pool con `UPDATE_AFTER_BIND`, set layout con arrays de tamaño fijo (texturas, samplers, storage buffers), un set, y lista de huecos libres con liberación diferida (reutiliza `DeletionQueue`).
 - **5c. Pipeline layout global (hecho).** Un `VkPipelineLayout` con esa tabla y un rango de push constants; test de caja blanca de asignar y liberar huecos.
-- **5d. `Shader` y `GraphicsPipeline`.** Módulos SPIR-V (decisión 2: lenguaje de shaders) y pipeline con dynamic rendering usando el layout global.
+- **5d. `GraphicsPipeline`** (hecho, salvo 5d-4) (sin objeto `Shader` público; ver la tabla de objetos). Descriptor mínimo: bytes del vertex y del fragment shader (SPIR-V de `dxc`), nombre de la función de entrada de cada etapa (por defecto `vs_main` y `ps_main`), formato de color (`luxel::Format`) y topología (lista de triángulos). Todo lo demás es fijo e interno: sin vertex input (vertex pulling), sin culling, sin profundidad, sin blending, una muestra, viewport y scissor dinámicos (uno de cada). El descriptor irá creciendo cuando haya requisitos reales.
+  - 5d-1 (hecho): `shader_vs.hlsl` y `shader_ps.hlsl` en `luxel/shaders`, compilados a mano con `dxc -spirv`.
+  - 5d-2 (hecho): `GraphicsPipelineDescriptor`, interfaz pública `GraphicsPipeline` y `Device::create_graphics_pipeline()`.
+  - 5d-3 (hecho): `VulkanGraphicsPipeline` con módulos temporales, los bloques de estado y dynamic rendering, usando el layout global.
+  - 5d-4 (opcional): compilar los shaders desde CMake.
 - **5e. Triángulo** con vértices fijos en el shader, enlazando la tabla una vez por lista de comandos.
 
 Al cerrar cada hito: ejecutar con validación sin avisos y repasar en papel cómo sería cada función nueva en D3D12 y en OpenGL.
