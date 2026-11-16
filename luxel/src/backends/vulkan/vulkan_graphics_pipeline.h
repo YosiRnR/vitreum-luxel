@@ -2,8 +2,6 @@
 
 #include <luxel/types.h>
 #include "vulkan_device.h"
-#include <cstdint>
-#include <span>
 
 namespace luxel::vulkan
 {

@@ -100,9 +100,31 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   dependencia de `luxel`); el perfil y la entrada se deducen del sufijo del
   nombre. `test_1` y `test_deferred` reciben la carpeta con la definición
   `LUXEL_SHADER_DIR`.
-- Siguiente: hitos 6 y 7 (`Buffer`, `Texture` y `Sampler`); sus destructores
-  devolverán su hueco a la tabla. Los shaders propios del motor irán
-  incrustados en el ejecutable (hoy los tests leen los `.spv` de disco).
+  Hito 6 del RHI (6a y 6b hechos): `Buffer`. API pública en
+  `luxel/include/luxel/buffer.h`: `BufferUsage` (flags `Storage`, `Index`,
+  `TransferDst`, con `|`, `&`, `|=` y `has_flag`), `BufferDescriptor` (con
+  `from_data()` para crear el descriptor desde un rango contiguo) y `Buffer`
+  (`size()`, `usage()`, `bindless_index()`, que es 0 si no hay hueco);
+  `Device::create_buffer()` valida el descriptor y lanza si es incorrecto.
+  `VulkanBuffer`: `VkBuffer` + memoria `eDeviceLocal` (una asignación por
+  buffer; tipo elegido a mano con `memoryTypeBits`) y hueco bindless solo si el
+  uso incluye `Storage`, reservado al final del constructor para no perderlo si
+  éste lanza. Guarda un puntero crudo a la `VulkanBindlessTable` porque
+  `on_zero_refs()` suelta el `Ref` al device antes de encolar; es válido porque
+  `~VulkanDevice` vacía la cola en su cuerpo, antes de destruir la tabla.
+  `tests/test_deferred` casos 7-9 (hueco diferido y reutilizado, buffer `Index`
+  sin hueco, descriptores inválidos).
+- Siguiente: 6c (subida inicial por staging; extraer antes la búsqueda del tipo
+  de memoria a una función con las propiedades como parámetro), 6d (asignador
+  temporal por frame) y 6e (triángulo con vertex pulling). Después el hito 7
+  (`Texture` y `Sampler`), cuyos destructores también devolverán su hueco a la
+  tabla. Los shaders propios del motor irán incrustados en el ejecutable (hoy
+  los tests leen los `.spv` de disco).
+- Idea para más adelante: sub-asignación de memoria (hoy cada buffer hace su
+  propio `vkAllocateMemory`; el mínimo garantizado es 4096 asignaciones).
+  Decidir tras el hito 7 entre un sub-asignador propio o VMA como excepción
+  razonada a la regla de no usar librerías, dejando la reserva de memoria
+  detrás de una única función interna.
 - Pendiente (ventana/bucle): redibujar durante el arrastre del borde (bucle
   modal de Win32); con la ventana minimizada el bucle de la app gira sin dormir
   (esperar mensajes); el tamaño de la swapchain en `test_1` debería salir de la

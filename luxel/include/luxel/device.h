@@ -2,6 +2,7 @@
 #include <luxel/types.h>
 #include <luxel/swapchain.h>
 #include <luxel/graphics_pipeline.h>
+#include <luxel/buffer.h>
 #include <luxel/frame.h>
 #include <cstdint>
 
@@ -40,7 +41,7 @@ namespace luxel
 		virtual Frame* begin_frame(Swapchain&) = 0; // nullptr = no se pinta en este frame
 		virtual void end_frame(Frame&) = 0;
 		virtual void wait_idle() = 0;
-
+		virtual Ref<Buffer> create_buffer(const BufferDescriptor& buffer_desc) = 0;
 	};
 
 	Ref<Device> create_device(const DeviceDescriptor& device_desc);

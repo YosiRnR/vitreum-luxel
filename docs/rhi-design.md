@@ -59,8 +59,7 @@ device->wait_idle();
 **Paso 2: el triángulo** añade tres objetos y tres llamadas:
 
 ```cpp
-auto vertices = device->create_buffer({ .size = sizeof(verts), .usage = luxel::BufferUsage::Storage,
-                                        .initial_data = verts });
+auto vertices = device->create_buffer(luxel::BufferDescriptor::from_data(verts));  // uso Storage por defecto
 auto pipeline = device->create_graphics_pipeline({ .vertex = vs, .fragment = fs,
                                                    .color_formats = { swapchain->format() } });
 // dentro del frame:
@@ -177,6 +176,14 @@ Pasos del hito 5 (cada uno compila y se ejecuta sin avisos de validación):
   - 5d-3 (hecho): `VulkanGraphicsPipeline` con módulos temporales, los bloques de estado y dynamic rendering, usando el layout global.
   - 5d-4 (hecho): CMake compila los shaders con `dxc`. Convención de nombres: `<nombre>_vs.hlsl` y `<nombre>_ps.hlsl` (el sufijo decide el perfil `vs_6_0`/`ps_6_0` y la entrada `vs_main`/`ps_main`; los demás se ignoran). Los `.spv` van a la carpeta de compilación.
 - **5e. Triángulo** (hecho) con vértices fijos en el shader, enlazando la tabla una vez por lista de comandos (en cada `begin_frame`, porque el pool se resetea). Viewport y scissor se fijan en `begin_rendering`; `CommandList` expone `bind_pipeline` y `draw`.
+
+Pasos del hito 6 (propuesta, se ajusta sobre la marcha):
+
+- **6a. Interfaz pública (hecho).** `luxel/include/luxel/buffer.h` (`BufferUsage` como flags con `operator|`, `&`, `|=` y `has_flag`; `BufferDescriptor` con `from_data`; `Buffer` con `size()`, `usage()` y `bindless_index()`, que devuelve 0 si no hay slot) y `Device::create_buffer()`. Pendiente menor: `operator|=` debería devolver `BufferUsage&`. Hasta el 6b hace falta un `create_buffer` provisional en `VulkanDevice` (lanzar excepción) para que compile.
+- **6b. `VulkanBuffer` sin datos (hecho; `test_deferred` casos 7-9 en verde, sin avisos de validación).** `VkBuffer` + memoria (elegir el tipo de memoria a mano con `vkGetPhysicalDeviceMemoryProperties`, sin VMA), constructor privado + fábrica estática como el resto, slot de `allocate_storage_buffer_slot` si el uso incluye `Storage`, y destrucción diferida que libera el slot y el `VkBuffer`. Traducción `BufferUsage` -> `vk::BufferUsageFlags` en una función libre (como `vulkan_format.h`): `Storage` -> `eStorageBuffer`, `Index` -> `eIndexBuffer`, y siempre `eTransferDst` (necesario para la subida por staging del 6c).
+- **6c. Subida inicial por staging.** Buffer visible desde CPU + `vkCmdCopyBuffer` + sincronización. Decisión abierta: en `create_buffer` esperar a la GPU con una fence propia (simple, bloqueante) o encolar la copia en el siguiente frame (sin bloqueo, más complejo). Empezar por la simple.
+- **6d. Asignador temporal por frame.** Buffer anillo por frame en memoria visible desde CPU, mapeado de forma persistente; `frame->allocate(datos)` devuelve índice u offset. Aquí sí hace falta un tipo de memoria en el descriptor o un camino interno aparte.
+- **6e. Triángulo con vertex pulling y una matriz por frame** (entran las matemáticas de `luxel/src/math`).
 
 Al cerrar cada hito: ejecutar con validación sin avisos y repasar en papel cómo sería cada función nueva en D3D12 y en OpenGL.
 

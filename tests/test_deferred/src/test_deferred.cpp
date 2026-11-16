@@ -239,6 +239,82 @@ static void test_pipeline()
 	CHECK(device->ref_count() == 1);
 }
 
+// 7. Buffer Storage: tiene hueco bindless y este se devuelve de forma diferida.
+static void test_buffer_storage_slot(vitreum::Window& window)
+{
+	std::cout << "[7] buffer Storage: hueco bindless con liberacion diferida\n";
+	FrameRig rig(window);
+
+	const std::vector<float> data(64, 1.0f);
+	auto desc = luxel::BufferDescriptor::from_data(data, luxel::BufferUsage::Storage);
+
+	auto b1 = rig.device->create_buffer(desc);
+	CHECK(b1->size() == data.size() * sizeof(float));
+	CHECK(luxel::has_flag(b1->usage(), luxel::BufferUsage::Storage));
+	const uint32_t idx1 = b1->bindless_index();
+	CHECK(idx1 != 0);
+
+	b1 = {};   // se encola; el hueco NO debe estar libre todavia
+
+	auto b2 = rig.device->create_buffer(desc);
+	const uint32_t idx2 = b2->bindless_index();
+	CHECK(idx2 != 0);
+	CHECK(idx2 != idx1);   // si fuese igual, el hueco se habria liberado antes de tiempo
+
+	b2 = {};
+	CHECK(rig.run_frame());
+	CHECK(rig.run_frame());
+	CHECK(rig.run_frame());   // ya han pasado los frames en vuelo: ambos huecos libres
+
+	auto b3 = rig.device->create_buffer(desc);
+	const uint32_t idx3 = b3->bindless_index();
+	CHECK(idx3 == idx1 || idx3 == idx2);   // reutiliza un hueco liberado
+}
+
+// 8. Buffer solo Index: sin hueco bindless. Tambien comprueba que soltarlo no
+//    deja al device retenido.
+static void test_buffer_index_no_slot()
+{
+	std::cout << "[8] buffer Index: sin hueco bindless y sin retener el device\n";
+	auto device = make_device();
+	{
+		const std::vector<uint16_t> indices{ 0, 1, 2 };
+		auto buffer = device->create_buffer(luxel::BufferDescriptor::from_data(indices, luxel::BufferUsage::Index));
+		CHECK(buffer->bindless_index() == 0);
+		CHECK(buffer->size() == indices.size() * sizeof(uint16_t));
+		CHECK(luxel::has_flag(buffer->usage(), luxel::BufferUsage::Index));
+		CHECK(!luxel::has_flag(buffer->usage(), luxel::BufferUsage::Storage));
+	}
+	CHECK(device->ref_count() == 1);
+}
+
+// 9. Descriptores invalidos: create_buffer debe lanzar.
+static void test_buffer_invalid_descriptors()
+{
+	std::cout << "[9] create_buffer rechaza descriptores invalidos\n";
+	auto device = make_device();
+
+	auto throws = [&](const luxel::BufferDescriptor& desc) {
+		try {
+			device->create_buffer(desc);
+		}
+		catch (const std::exception&) {
+			return true;
+		}
+		return false;
+	};
+
+	CHECK(throws({ .size = 0, .usage = luxel::BufferUsage::Storage }));
+	CHECK(throws({ .size = 16, .usage = luxel::BufferUsage::None }));
+
+	const std::vector<std::byte> too_much(32);
+	CHECK(throws({ .size = 16, .usage = luxel::BufferUsage::Storage, .initial_data = too_much }));
+
+	// Y uno valido sin datos iniciales no debe lanzar.
+	CHECK(!throws({ .size = 16, .usage = luxel::BufferUsage::Storage }));
+	CHECK(device->ref_count() == 1);
+}
+
 int main()
 {
 	test_not_destroyed_immediately();
@@ -255,6 +331,10 @@ int main()
 
 	test_descriptor_set_sampler_slots(window);
 	test_pipeline();
+
+	test_buffer_storage_slot(window);
+	test_buffer_index_no_slot();
+	test_buffer_invalid_descriptors();
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;

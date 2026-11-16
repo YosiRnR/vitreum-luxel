@@ -4,6 +4,7 @@
 #include <luxel/device.h>
 #include <luxel/swapchain.h>
 #include <luxel/graphics_pipeline.h>
+#include <luxel/buffer.h>
 #include <luxel/frame.h>
 #include "vulkan_common.h"
 #include "vulkan_frame.h"
@@ -106,6 +107,7 @@ namespace luxel::vulkan
 		Frame* begin_frame(Swapchain&) override; // nullptr = no se pinta en este frame
 		void end_frame(Frame&) override;
 		void wait_idle() override;
+		Ref<Buffer> create_buffer(const BufferDescriptor&) override;
 
 		void enqueue_destroy(RefCounted* resource) {
 			m_deletion_queue.push(m_active_frame_index, resource);

@@ -141,7 +141,8 @@ namespace luxel::vulkan
 		m_pipeline = vk::raii::Pipeline(m_ref_device->logical_device(), nullptr, pipeline_info);
 	}
 
-	void VulkanGraphicsPipeline::on_zero_refs() const {
+	void VulkanGraphicsPipeline::on_zero_refs() const
+	{
 		auto* self = const_cast<VulkanGraphicsPipeline*>(this);
 
 		// Sacamos el Ref del miembro a un local ANTES de encolar: ese local debe

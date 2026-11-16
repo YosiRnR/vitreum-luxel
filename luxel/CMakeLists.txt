@@ -78,7 +78,11 @@ add_library(luxel STATIC
     "src/backends/vulkan/vulkan_bindless_table.cpp"
     "include/luxel/graphics_pipeline.h"
     "src/backends/vulkan/vulkan_graphics_pipeline.h"
-    "src/backends/vulkan/vulkan_graphics_pipeline.cpp" "src/backends/vulkan/vulkan_format.h"
+    "src/backends/vulkan/vulkan_graphics_pipeline.cpp"
+    "src/backends/vulkan/vulkan_format.h"
+    "include/luxel/buffer.h"
+    "src/backends/vulkan/vulkan_buffer.h"
+    "src/backends/vulkan/vulkan_buffer.cpp"
 )
 
 add_dependencies(luxel compile_shaders)

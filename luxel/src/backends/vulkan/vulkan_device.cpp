@@ -2,11 +2,13 @@
 #include <luxel/device.h>
 #include <luxel/swapchain.h>
 #include <luxel/graphics_pipeline.h>
+#include <luxel/buffer.h>
 #include <luxel/frame.h>
 #include "vulkan_common.h"
 #include "vulkan_device.h"
 #include "vulkan_swapchain.h"
 #include "vulkan_graphics_pipeline.h"
+#include "vulkan_buffer.h"
 #include "vulkan_platform.h"
 #include "vulkan_frame.h"
 #include "vulkan_physical_device.h"
@@ -212,6 +214,14 @@ namespace luxel::vulkan
 
 	void VulkanDevice::wait_idle() {
 		m_logical_device.waitIdle();
+	}
+
+	Ref<Buffer> VulkanDevice::create_buffer(const BufferDescriptor& buffer_desc)
+	{
+		if (buffer_desc.size <= 0 || buffer_desc.usage == BufferUsage::None || buffer_desc.initial_data.size() > buffer_desc.size) {
+			throw std::runtime_error("Parámetros de creación del buffer incorrectos"); // Podría dividir los IFs para dar un mensaje más preciso
+		}
+		return VulkanBuffer::create(Ref<VulkanDevice>(this), buffer_desc);
 	}
 
 	vk::DebugUtilsMessengerCreateInfoEXT VulkanDevice::debug_utils_create_info()
