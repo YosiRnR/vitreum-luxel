@@ -65,8 +65,8 @@ int main(int argc, char** argv)
 		.vsync  = true
 	});
 
-	auto vs_code = read_binary_file("../../../../../luxel/shaders/shader_vs.spv");
-	auto ps_code = read_binary_file("../../../../../luxel/shaders/shader_ps.spv");
+	auto vs_code = read_binary_file(std::filesystem::path(LUXEL_SHADER_DIR) / "shader_vs.spv");
+	auto ps_code = read_binary_file(std::filesystem::path(LUXEL_SHADER_DIR) / "shader_ps.spv");
 	auto pipeline = render_device->create_graphics_pipeline({
 		.vs_byte_code = std::span<uint32_t>(vs_code),
 		.ps_byte_code = std::span<uint32_t>(ps_code),

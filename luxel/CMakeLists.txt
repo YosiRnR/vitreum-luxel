@@ -2,7 +2,59 @@ cmake_minimum_required(VERSION 3.21)
 
 project(luxel LANGUAGES CXX)
 
-find_package(Vulkan REQUIRED)
+find_package(Vulkan REQUIRED COMPONENTS dxc)
+message(STATUS "DXC library: ${Vulkan_dxc_LIBRARY}")
+message(STATUS "DXC executable: ${Vulkan_dxc_EXECUTABLE}")
+
+file(GLOB lista_hlsl_shaders CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.hlsl")
+
+set(shader_spv_files)
+
+foreach(hlsl_shader IN LISTS lista_hlsl_shaders)
+    get_filename_component(shader_name "${hlsl_shader}" NAME_WE)
+
+    if(shader_name MATCHES "_(vs|ps)$")
+        set(shader_stage "${CMAKE_MATCH_1}")
+    else()
+        message(STATUS "Ignorando shader sin sufijo _vs/_ps: ${hlsl_shader}")
+        continue()
+    endif()
+
+    if(shader_stage STREQUAL "vs")
+        set(shader_profile "vs_6_0")
+        set(shader_entry   "vs_main")
+    elseif(shader_stage STREQUAL "ps")
+        set(shader_profile "ps_6_0")
+        set(shader_entry   "ps_main")
+    else()
+        message(STATUS "Ignorando shader sin prefijo vs/ps: ${hlsl_shader}")
+        continue()
+    endif()
+
+    set(shader_output "${CMAKE_CURRENT_BINARY_DIR}/shaders/${shader_name}.spv")
+    list(APPEND shader_spv_files "${shader_output}")
+    message(STATUS "Shader: ${hlsl_shader} -> ${shader_output}")
+
+    add_custom_command(
+        OUTPUT "${shader_output}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory
+                "${CMAKE_CURRENT_BINARY_DIR}/shaders"
+        COMMAND "${Vulkan_dxc_EXECUTABLE}"
+                -spirv
+                -T "${shader_profile}"
+                -E "${shader_entry}"
+                "-fspv-target-env=vulkan1.3"
+                -Fo "${shader_output}"
+                "${hlsl_shader}"
+        DEPENDS "${hlsl_shader}"
+        VERBATIM
+    )
+endforeach()
+
+add_custom_target(compile_shaders ALL
+    DEPENDS ${shader_spv_files}
+    SOURCES ${lista_hlsl_shaders}
+)
 
 add_library(luxel STATIC
     
@@ -26,7 +78,10 @@ add_library(luxel STATIC
     "src/backends/vulkan/vulkan_bindless_table.cpp"
     "include/luxel/graphics_pipeline.h"
     "src/backends/vulkan/vulkan_graphics_pipeline.h"
-    "src/backends/vulkan/vulkan_graphics_pipeline.cpp" "src/backends/vulkan/vulkan_format.h")
+    "src/backends/vulkan/vulkan_graphics_pipeline.cpp" "src/backends/vulkan/vulkan_format.h"
+)
+
+add_dependencies(luxel compile_shaders)
 
 target_include_directories(luxel
     PUBLIC

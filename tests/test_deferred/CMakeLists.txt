@@ -25,7 +25,11 @@ target_link_libraries(test_deferred
 
 target_compile_features(test_deferred PRIVATE cxx_std_20)
 
-target_compile_definitions(test_deferred PRIVATE UNICODE _UNICODE)
+target_compile_definitions(test_deferred PRIVATE
+    UNICODE
+    _UNICODE
+    LUXEL_SHADER_DIR="${CMAKE_BINARY_DIR}/luxel/shaders"
+)
 
 set_target_properties(test_deferred PROPERTIES
     CXX_EXTENSIONS OFF

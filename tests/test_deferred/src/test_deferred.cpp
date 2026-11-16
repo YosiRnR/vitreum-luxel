@@ -228,8 +228,8 @@ static void test_pipeline()
 	std::cout << "[6] crear y soltar pipeline\n";
 	auto device = make_device();
 	{
-		auto vs_code = read_binary_file("../../../../../luxel/shaders/shader_vs.spv");
-		auto ps_code = read_binary_file("../../../../../luxel/shaders/shader_ps.spv");
+		auto vs_code = read_binary_file(std::filesystem::path(LUXEL_SHADER_DIR) / "shader_vs.spv");
+		auto ps_code = read_binary_file(std::filesystem::path(LUXEL_SHADER_DIR) / "shader_ps.spv");
 		auto pipeline = static_cast<luxel::vulkan::VulkanDevice*>(device.get())->create_graphics_pipeline({
 			.vs_byte_code = std::span<uint32_t>(vs_code),
 			.ps_byte_code = std::span<uint32_t>(ps_code),
