@@ -26,6 +26,7 @@
 #include <iostream>
 #include <algorithm>
 #include <stdexcept>
+#include <functional>
 #include <string_view>
 #include <type_traits>
 
@@ -77,6 +78,13 @@ namespace luxel::vulkan
 		pick_physical_device();
 		create_logical_device();
 		create_frames();
+
+		vk::CommandPoolCreateInfo transient_pool_info{
+			.flags            = vk::CommandPoolCreateFlagBits::eTransient,
+			.queueFamilyIndex = m_graphics_queue_family_index
+		};
+		m_transient_command_pool = vk::raii::CommandPool(m_logical_device, transient_pool_info);
+		
 		// Podría ir en una función pero por simplificar ahora mismo lo dejo así
 		m_bindless_table = std::make_unique<VulkanBindlessTable>(m_logical_device, m_dev_maximus);
 	}
@@ -224,13 +232,55 @@ namespace luxel::vulkan
 		return VulkanBuffer::create(Ref<VulkanDevice>(this), buffer_desc);
 	}
 
+	uint32_t VulkanDevice::find_memory_type(uint32_t type_bits, vk::MemoryPropertyFlags properties) const
+	{
+		uint32_t mem_type_index{ UINT32_MAX };
+		vk::PhysicalDeviceMemoryProperties mem_properties = m_physical_device.getMemoryProperties();
+
+		for (uint32_t i = 0; i < mem_properties.memoryTypeCount; i++)
+		{
+			// Vamos comprobando todos los bits a 1 de memoryTypeBits
+			if ((type_bits & (1u << i)) && (mem_properties.memoryTypes[i].propertyFlags & properties) == properties) {
+				mem_type_index = i;
+				break;
+			}
+		}
+
+		if (mem_type_index == UINT32_MAX) {
+			throw std::runtime_error("No se pudo encontrar memoria para el buffer");
+		}
+
+		return mem_type_index;
+	}
+
+	void VulkanDevice::submit_immediate(std::function<void(vk::raii::CommandBuffer&)> recorder)
+	{
+		vk::CommandBufferAllocateInfo alloc_info{
+			.commandPool        = *m_transient_command_pool,
+			.level              = vk::CommandBufferLevel::ePrimary,
+			.commandBufferCount = 1
+		};
+		vk::raii::CommandBuffer command_buffer = std::move(vk::raii::CommandBuffers(m_logical_device, alloc_info).front());
+
+		command_buffer.begin({ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+		recorder(command_buffer);
+		command_buffer.end();
+
+		vk::SubmitInfo submit_info{
+			.commandBufferCount = 1,
+			.pCommandBuffers    = &*command_buffer
+		};
+		m_graphics_queue.submit(submit_info, nullptr);
+		m_graphics_queue.waitIdle();
+	}
+
 	vk::DebugUtilsMessengerCreateInfoEXT VulkanDevice::debug_utils_create_info()
 	{
 		using enum vk::DebugUtilsMessageSeverityFlagBitsEXT;
 		using enum vk::DebugUtilsMessageTypeFlagBitsEXT;
 
 		vk::DebugUtilsMessengerCreateInfoEXT debug_create_info{
-			.messageSeverity = eVerbose | eWarning | eError,
+			.messageSeverity = /*eVerbose |*/ eWarning | eError,
 			.messageType     = eGeneral | eValidation | ePerformance,
 			.pfnUserCallback = debug_callback,
 			.pUserData       = this

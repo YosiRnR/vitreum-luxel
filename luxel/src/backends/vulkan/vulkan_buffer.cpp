@@ -2,8 +2,8 @@
 #include <luxel/types.h>
 #include "vulkan_common.h"
 #include "vulkan_device.h"
+#include "vulkan_staging_buffer.h"
 #include <luxel/buffer.h>
-#include <stdexcept>
 #include <utility>
 #include <cstdint>
 
@@ -32,6 +32,7 @@ namespace luxel::vulkan
 		, m_ref_device(vk_device)
 		, m_bindless_table(&vk_device->bindless_table())
 	{
+		// Buffer
 		vk::BufferCreateInfo buffer_info{
 			.size        = buffer_desc.size,
 			.usage       = to_vk_buffer_usage(buffer_desc.usage) | vk::BufferUsageFlagBits::eTransferDst,
@@ -39,21 +40,12 @@ namespace luxel::vulkan
 		};
 		m_buffer = vk::raii::Buffer(m_ref_device->logical_device(), buffer_info);
 
+		// Memoria del buffer
 		vk::MemoryRequirements mem_requirements = m_buffer.getMemoryRequirements();
-		vk::PhysicalDeviceMemoryProperties mem_properties = m_ref_device->physical_device().getMemoryProperties();
 		vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal; // Memoria de GPU
-		uint32_t memory_type_index{ UINT32_MAX };
-		for (uint32_t i = 0; i < mem_properties.memoryTypeCount; i++)
-		{
-			// vamos comprobando todos los bits a 1 de memoryTypeBits
-			if ((mem_requirements.memoryTypeBits & (1u << i)) && (mem_properties.memoryTypes[i].propertyFlags & properties) == properties) {
-				memory_type_index = i;
-				break;
-			}
-		}
-		if (memory_type_index == UINT32_MAX) {
-			throw std::runtime_error("No se pudo encontrar memoria para el buffer");
-		}
+
+		uint32_t memory_type_index = m_ref_device->find_memory_type(mem_requirements.memoryTypeBits, properties);
+
 		vk::MemoryAllocateInfo alloc_info{
 			.allocationSize  = mem_requirements.size,
 			.memoryTypeIndex = memory_type_index
@@ -62,6 +54,16 @@ namespace luxel::vulkan
 
 		m_buffer.bindMemory(*m_buffer_memory, 0);
 
+		if (buffer_desc.initial_data.size() > 0)
+		{
+			VulkanStagingBuffer staging(*m_ref_device, buffer_desc.initial_data.size());
+			staging.write_data(buffer_desc.initial_data);
+			m_ref_device->submit_immediate([&staging, &buffer_desc, this](vk::raii::CommandBuffer& command) {
+				command.copyBuffer(*staging.buffer(), *m_buffer, vk::BufferCopy{ .srcOffset = 0, .dstOffset = 0, .size = buffer_desc.initial_data.size()});
+			});
+		}
+
+		// Entrada en el SlotAllocator de Buffers
 		if (has_flag(buffer_desc.usage, BufferUsage::Storage)) {
 			m_slot_index = m_bindless_table->allocate_buffer_slot(m_buffer, {}, vk::WholeSize);
 		}

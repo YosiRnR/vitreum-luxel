@@ -315,6 +315,42 @@ static void test_buffer_invalid_descriptors()
 	CHECK(device->ref_count() == 1);
 }
 
+// 10. Subida inicial por staging. No se puede leer el contenido de vuelta (el
+//     buffer no es fuente de copia), asi que se comprueba que no lanza, que los
+//     huecos son los esperados y que no quedan referencias colgando; los avisos
+//     de validacion (consola) son la parte importante de esta prueba.
+static void test_buffer_upload()
+{
+	std::cout << "[10] subida inicial por staging\n";
+	auto device = make_device();
+	{
+		const std::vector<float> vertices(48, 2.0f);
+
+		// Datos del mismo tamaño que el buffer.
+		auto full = device->create_buffer(luxel::BufferDescriptor::from_data(vertices));
+		CHECK(full->size() == vertices.size() * sizeof(float));
+		CHECK(full->bindless_index() != 0);
+
+		// Datos MAS PEQUEÑOS que el buffer: la copia debe ser del tamaño de los datos.
+		auto desc = luxel::BufferDescriptor::from_data(vertices);
+		desc.size = desc.initial_data.size() * 4;
+		auto partial = device->create_buffer(desc);
+		CHECK(partial->size() == desc.size);
+		CHECK(partial->bindless_index() != 0);
+		CHECK(partial->bindless_index() != full->bindless_index());
+
+		// Index con datos: sin hueco bindless.
+		const std::vector<uint32_t> indices{ 0, 1, 2, 2, 1, 3 };
+		auto index = device->create_buffer(luxel::BufferDescriptor::from_data(indices, luxel::BufferUsage::Index));
+		CHECK(index->bindless_index() == 0);
+
+		// Storage | Index con datos.
+		auto both = device->create_buffer(luxel::BufferDescriptor::from_data(indices, luxel::BufferUsage::Storage | luxel::BufferUsage::Index));
+		CHECK(both->bindless_index() != 0);
+	}
+	CHECK(device->ref_count() == 1);
+}
+
 int main()
 {
 	test_not_destroyed_immediately();
@@ -335,6 +371,7 @@ int main()
 	test_buffer_storage_slot(window);
 	test_buffer_index_no_slot();
 	test_buffer_invalid_descriptors();
+	test_buffer_upload();
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;

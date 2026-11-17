@@ -9,6 +9,7 @@
 #include "vulkan_common.h"
 #include "vulkan_frame.h"
 #include "vulkan_bindless_table.h"
+#include <functional>
 #include <mutex>
 #include <array>
 #include <vector>
@@ -112,6 +113,8 @@ namespace luxel::vulkan
 		void enqueue_destroy(RefCounted* resource) {
 			m_deletion_queue.push(m_active_frame_index, resource);
 		}
+		uint32_t find_memory_type(uint32_t type_bits, vk::MemoryPropertyFlags properties) const;
+		void submit_immediate(std::function<void(vk::raii::CommandBuffer&)> recorder);
 
 		// Accesores públicos
 		const vk::raii::Instance& instance() const { return m_instance; }
@@ -121,6 +124,7 @@ namespace luxel::vulkan
 		uint32_t graphics_family_index() const { return m_graphics_queue_family_index; }
 		const vk::raii::Queue& graphics_queue()  const { return m_graphics_queue;  }
 		const vk::raii::Queue& present_queue()   const { return m_present_queue; }
+		const vk::raii::CommandPool& transient_command_pool() const { return m_transient_command_pool; }
 		const RequestedDeviceMaximums& dev_maximus() const { return m_dev_maximus; }
 		VulkanBindlessTable& bindless_table() { return *m_bindless_table; }
 
@@ -148,8 +152,9 @@ namespace luxel::vulkan
 
 		std::array<FrameResources, k_frames_in_flight> m_frames_resources;
 		uint32_t m_frame_index{ 0 };
-
 		VulkanFrame m_frame;
+
+		vk::raii::CommandPool m_transient_command_pool{ nullptr };
 
 		DeletionQueue m_deletion_queue;
 		uint32_t m_active_frame_index{ 0 };

@@ -83,6 +83,8 @@ add_library(luxel STATIC
     "include/luxel/buffer.h"
     "src/backends/vulkan/vulkan_buffer.h"
     "src/backends/vulkan/vulkan_buffer.cpp"
+    "src/backends/vulkan/vulkan_staging_buffer.h"
+    "src/backends/vulkan/vulkan_staging_buffer.cpp"
 )
 
 add_dependencies(luxel compile_shaders)
