@@ -100,7 +100,7 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   dependencia de `luxel`); el perfil y la entrada se deducen del sufijo del
   nombre. `test_1` y `test_deferred` reciben la carpeta con la definición
   `LUXEL_SHADER_DIR`.
-  Hito 6 del RHI (6a y 6b hechos): `Buffer`. API pública en
+  Hito 6 del RHI (6a-6c hechos): `Buffer`. API pública en
   `luxel/include/luxel/buffer.h`: `BufferUsage` (flags `Storage`, `Index`,
   `TransferDst`, con `|`, `&`, `|=` y `has_flag`), `BufferDescriptor` (con
   `from_data()` para crear el descriptor desde un rango contiguo) y `Buffer`
@@ -114,9 +114,21 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   `~VulkanDevice` vacía la cola en su cuerpo, antes de destruir la tabla.
   `tests/test_deferred` casos 7-9 (hueco diferido y reutilizado, buffer `Index`
   sin hueco, descriptores inválidos).
-- Siguiente: 6c (subida inicial por staging; extraer antes la búsqueda del tipo
-  de memoria a una función con las propiedades como parámetro), 6d (asignador
-  temporal por frame) y 6e (triángulo con vertex pulling). Después el hito 7
+  6c hecho: subida inicial por staging. `VulkanDevice::find_memory_type()`
+  (`const`, lanza si no hay tipo adecuado) la comparten todos los que reserven
+  memoria. `VulkanStagingBuffer` (`vulkan_staging_buffer.*`): buffer
+  `eTransferSrc` en memoria visible y coherente, `write_data` mapea, copia y
+  desmapea (comprueba el tamaño); no es un `luxel::Buffer`, vive en la pila.
+  `VulkanDevice::submit_immediate(recorder)`: command buffer de un solo uso de
+  un pool transitorio, enviado a la cola gráfica y `waitIdle()` (bloqueante;
+  vale mientras el diseño sea monohilo). El constructor de `VulkanBuffer` sube
+  `initial_data` (la copia es del tamaño de los datos, no del buffer) antes de
+  reservar el slot. Sin barrera mientras se espere a la GPU. Test 10 de
+  `test_deferred`; el contenido se verificará en el 6e. Silenciado `eVerbose`
+  en los mensajes de validación.
+- Siguiente: 6d (asignador temporal por frame, buffer anillo en memoria
+  mapeada de forma persistente) y 6e (triángulo con vertex pulling y una matriz
+  por frame, con matemáticas de `luxel/src/math`). Después el hito 7
   (`Texture` y `Sampler`), cuyos destructores también devolverán su hueco a la
   tabla. Los shaders propios del motor irán incrustados en el ejecutable (hoy
   los tests leen los `.spv` de disco).
