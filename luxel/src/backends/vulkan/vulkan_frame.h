@@ -3,12 +3,15 @@
 #include <luxel/frame.h>
 #include <luxel/command_list.h>
 #include "vulkan_command_list.h"
+#include "vulkan_frame_allocator.h"
 #include <cstdint>
+#include <cstddef>
+#include <span>
 
 namespace luxel::vulkan
 {
 	class VulkanSwapchain;
-
+	
 	class VulkanFrame : public Frame
 	{
 	public:
@@ -17,6 +20,7 @@ namespace luxel::vulkan
 		CommandList& commands() override { return m_command_list; }
 
 		void reset(
+			VulkanFrameAllocator& frame_allocator,
 			vk::raii::CommandBuffer& cmd_buffer,
 			vk::Image image, const vk::raii::ImageView& view,
 			vk::Extent2D extent,
@@ -26,13 +30,17 @@ namespace luxel::vulkan
 			m_swapchain = &vk_swapchain;
 			m_image_index = image_index;
 			m_command_list.reset(cmd_buffer, image, view, extent);
+			m_frame_allocator = &frame_allocator;
 		}
+
+		BufferAllocation allocate(std::span<const std::byte> buffer_data) override;
 
 		// Accesores públicos
 		VulkanSwapchain& swapchain() const { return *m_swapchain; }
 		uint32_t image_index() const { return m_image_index; }
 
 	private:
+		VulkanFrameAllocator* m_frame_allocator{ nullptr };
 		VulkanCommandList m_command_list;
 		VulkanSwapchain* m_swapchain{ nullptr };
 		uint32_t m_image_index{ 0 };

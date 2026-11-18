@@ -85,6 +85,9 @@ add_library(luxel STATIC
     "src/backends/vulkan/vulkan_buffer.cpp"
     "src/backends/vulkan/vulkan_staging_buffer.h"
     "src/backends/vulkan/vulkan_staging_buffer.cpp"
+    "src/backends/vulkan/vulkan_frame_allocator.h"
+    "src/backends/vulkan/vulkan_frame_allocator.cpp"
+    "src/backends/vulkan/vulkan_frame.cpp"
 )
 
 add_dependencies(luxel compile_shaders)

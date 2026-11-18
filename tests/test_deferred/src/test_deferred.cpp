@@ -8,6 +8,7 @@
 #include <vitreum/vitreum.h>
 #include <luxel/luxel.h>
 #include "backends/vulkan/vulkan_device.h"
+#include "backends/vulkan/vulkan_frame_allocator.h"
 
 #include <filesystem>
 #include <stdexcept>
@@ -351,6 +352,101 @@ static void test_buffer_upload()
 	CHECK(device->ref_count() == 1);
 }
 
+// 11. VulkanFrameAllocator aislado: offsets crecientes y alineados a 16, mismo
+//     hueco bindless para todo el allocator, reset, desbordamiento y que el
+//     destructor devuelve el hueco a la tabla.
+static void test_frame_allocator()
+{
+	std::cout << "[11] VulkanFrameAllocator\n";
+	auto device = make_device();
+	auto& vk_device = *static_cast<luxel::vulkan::VulkanDevice*>(device.get());
+
+	uint32_t first_slot = 0;
+	{
+		luxel::vulkan::VulkanFrameAllocator allocator(vk_device);
+		const std::vector<std::byte> data(64, std::byte{ 0xAB });
+		const std::span<const std::byte> bytes(data);
+
+		auto a = allocator.allocate(bytes.first(16));
+		auto b = allocator.allocate(bytes.first(20));
+		auto c = allocator.allocate(bytes.first(4));
+		auto d = allocator.allocate(bytes.first(16));
+
+		CHECK(a.slot_index != 0);
+		CHECK(a.slot_index == b.slot_index && b.slot_index == c.slot_index && c.slot_index == d.slot_index);
+		CHECK(a.offset == 0);
+		CHECK(b.offset == 16);   // 16 ya esta alineado
+		CHECK(c.offset == 48);   // 16 + 20 = 36 -> 48
+		CHECK(d.offset == 64);   // 48 + 4 = 52 -> 64
+		first_slot = a.slot_index;
+
+		// Reset: se vuelve a empezar desde 0 con el mismo hueco.
+		allocator.reset_cursor();
+		auto e = allocator.allocate(bytes.first(8));
+		CHECK(e.offset == 0);
+		CHECK(e.slot_index == first_slot);
+
+		// Desbordamiento: justo la capacidad cabe, un byte mas no.
+		const std::vector<std::byte> big(luxel::vulkan::k_frame_allocator_capacity, std::byte{ 0 });
+		allocator.reset_cursor();
+		auto full = allocator.allocate(big);
+		CHECK(full.offset == 0);
+
+		bool threw = false;
+		try { allocator.allocate(bytes.first(1)); } catch (const std::runtime_error&) { threw = true; }
+		CHECK(threw);
+
+		allocator.reset_cursor();
+		const std::vector<std::byte> too_big(luxel::vulkan::k_frame_allocator_capacity + 1, std::byte{ 0 });
+		threw = false;
+		try { allocator.allocate(too_big); } catch (const std::runtime_error&) { threw = true; }
+		CHECK(threw);
+
+		// Tras la excepcion el allocator sigue siendo usable.
+		auto after = allocator.allocate(bytes.first(16));
+		CHECK(after.offset == 0);
+	}
+
+	// El destructor ha devuelto el hueco: un allocator nuevo lo reutiliza.
+	{
+		luxel::vulkan::VulkanFrameAllocator allocator(vk_device);
+		const std::vector<std::byte> data(16, std::byte{ 0 });
+		CHECK(allocator.allocate(data).slot_index == first_slot);
+	}
+
+	CHECK(device->ref_count() == 1);
+}
+
+// 12. Frame::allocate dentro de frames reales: cada frame empieza en 0 (reset
+//     en begin_frame), los dos frames en vuelo usan huecos distintos y las
+//     asignaciones de un mismo frame no se solapan.
+static void test_frame_allocate(vitreum::Window& window)
+{
+	std::cout << "[12] Frame::allocate en frames reales\n";
+	FrameRig rig(window);
+	const std::vector<std::byte> data(100, std::byte{ 0x7F });
+
+	uint32_t slots[2]{};
+	for (int i = 0; i < 6; ++i)
+	{
+		auto* frame = rig.begin();
+		if (frame == nullptr) { continue; }
+
+		auto a = frame->allocate(data);
+		auto b = frame->allocate(data);
+		CHECK(a.offset == 0);               // reset al empezar el frame
+		CHECK(b.offset == 112);             // 100 -> 112
+		CHECK(a.slot_index == b.slot_index);
+		CHECK(a.slot_index != 0);
+		slots[i % 2] = a.slot_index;
+
+		frame->commands().begin_rendering({ .clear = { 0.0f, 0.0f, 0.0f, 1.0f } });
+		frame->commands().end_rendering();
+		rig.end(*frame);
+	}
+	CHECK(slots[0] != slots[1]);
+}
+
 int main()
 {
 	test_not_destroyed_immediately();
@@ -372,6 +468,9 @@ int main()
 	test_buffer_index_no_slot();
 	test_buffer_invalid_descriptors();
 	test_buffer_upload();
+
+	test_frame_allocator();
+	test_frame_allocate(window);
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;

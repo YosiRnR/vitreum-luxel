@@ -13,6 +13,7 @@
 #include "vulkan_frame.h"
 #include "vulkan_physical_device.h"
 #include "vulkan_bindless_table.h"
+#include "vulkan_frame_allocator.h"
 #include <set>
 #include <ranges>
 #include <vector>
@@ -77,8 +78,8 @@ namespace luxel::vulkan
 		setup_debug_messenger();
 		pick_physical_device();
 		create_logical_device();
-		create_frames();
 
+		// Command Pool tipo eTransient para crear CommandBuffers de corto tiempo de vida, del tipo eOneTimeSubmit
 		vk::CommandPoolCreateInfo transient_pool_info{
 			.flags            = vk::CommandPoolCreateFlagBits::eTransient,
 			.queueFamilyIndex = m_graphics_queue_family_index
@@ -87,6 +88,8 @@ namespace luxel::vulkan
 		
 		// Podría ir en una función pero por simplificar ahora mismo lo dejo así
 		m_bindless_table = std::make_unique<VulkanBindlessTable>(m_logical_device, m_dev_maximus);
+
+		create_frames();
 	}
 
 	VulkanDevice::~VulkanDevice()
@@ -134,6 +137,7 @@ namespace luxel::vulkan
 		m_logical_device.resetFences(*m_frames_resources[m_frame_index].in_flight);
 
 		auto& frame_res = m_frames_resources[m_frame_index];
+		frame_res.frame_allocator->reset_cursor();
 		frame_res.command_pool.reset();
 		frame_res.command_buffer.begin(vk::CommandBufferBeginInfo{ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 
@@ -161,6 +165,7 @@ namespace luxel::vulkan
 		);
 
 		m_frame.reset(
+			*frame_res.frame_allocator,
 			frame_res.command_buffer,
 			vk_swapchain.image(index.value()),
 			vk_swapchain.image_view(index.value()),
@@ -451,6 +456,8 @@ namespace luxel::vulkan
 
 			frame.image_available = vk::raii::Semaphore(m_logical_device, semaphore_create_info);
 			frame.in_flight       = vk::raii::Fence(m_logical_device, fence_create_info);
+
+			frame.frame_allocator = std::make_unique<VulkanFrameAllocator>(*this);
 		}
 	}
 

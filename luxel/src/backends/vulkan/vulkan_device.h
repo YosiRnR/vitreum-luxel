@@ -19,6 +19,8 @@
 
 namespace luxel::vulkan
 {
+	class VulkanFrameAllocator;
+
 	inline constexpr uint32_t k_frames_in_flight = 2;
 
 	class DeletionQueue
@@ -91,6 +93,7 @@ namespace luxel::vulkan
 			vk::raii::CommandBuffer command_buffer{ nullptr };
 			vk::raii::Semaphore image_available{ nullptr };
 			vk::raii::Fence in_flight{ nullptr };
+			std::unique_ptr<VulkanFrameAllocator> frame_allocator{ nullptr };
 		};
 
 	public:
@@ -150,6 +153,9 @@ namespace luxel::vulkan
 		vk::raii::Queue m_graphics_queue{ nullptr };
 		vk::raii::Queue  m_present_queue{ nullptr };
 
+		// Tiene que destruirse antes que el m_logical_device así que tiene que venir debajo de él
+		std::unique_ptr<VulkanBindlessTable> m_bindless_table;
+
 		std::array<FrameResources, k_frames_in_flight> m_frames_resources;
 		uint32_t m_frame_index{ 0 };
 		VulkanFrame m_frame;
@@ -158,9 +164,6 @@ namespace luxel::vulkan
 
 		DeletionQueue m_deletion_queue;
 		uint32_t m_active_frame_index{ 0 };
-
-		// Tiene que destruirse antes que el m_logical_device así que tiene que venir debajo de él
-		std::unique_ptr<VulkanBindlessTable> m_bindless_table; 
 
 
 		// Función estática para imprimir por consola mensajes de Debug
