@@ -100,7 +100,7 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   dependencia de `luxel`); el perfil y la entrada se deducen del sufijo del
   nombre. `test_1` y `test_deferred` reciben la carpeta con la definición
   `LUXEL_SHADER_DIR`.
-  Hito 6 del RHI (6a-6c hechos): `Buffer`. API pública en
+  Hito 6 del RHI (6a-6d hechos): `Buffer`. API pública en
   `luxel/include/luxel/buffer.h`: `BufferUsage` (flags `Storage`, `Index`,
   `TransferDst`, con `|`, `&`, `|=` y `has_flag`), `BufferDescriptor` (con
   `from_data()` para crear el descriptor desde un rango contiguo) y `Buffer`
@@ -126,12 +126,22 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   reservar el slot. Sin barrera mientras se espere a la GPU. Test 10 de
   `test_deferred`; el contenido se verificará en el 6e. Silenciado `eVerbose`
   en los mensajes de validación.
-- Siguiente: 6d (asignador temporal por frame, buffer anillo en memoria
-  mapeada de forma persistente) y 6e (triángulo con vertex pulling y una matriz
-  por frame, con matemáticas de `luxel/src/math`). Después el hito 7
-  (`Texture` y `Sampler`), cuyos destructores también devolverán su hueco a la
-  tabla. Los shaders propios del motor irán incrustados en el ejecutable (hoy
-  los tests leen los `.spv` de disco).
+  6d hecho: asignador temporal por frame. `Frame::allocate(span)` devuelve
+  `BufferAllocation { slot_index, offset }`. `VulkanFrameAllocator` (interno):
+  buffer de almacenamiento de 1 MB por frame en vuelo, en memoria visible y
+  coherente, mapeado de forma persistente, con un único hueco bindless por
+  allocator (el índice es el mismo para todas sus reservas). Cursor alineado a
+  16, `runtime_error` si se llena, `reset_cursor()` en `begin_frame` tras
+  esperar la fence. Vive en un `unique_ptr` dentro de `FrameResources`
+  (`create_frames()` va después de crear la tabla bindless). Cuidado:
+  `unique_ptr::reset()` destruye el objeto; por eso el método se llama
+  `reset_cursor()`. Tests 11 y 12 de `test_deferred`; el contenido se
+  verificará en el 6e.
+- Siguiente: 6e (triángulo con vertex pulling y una matriz por frame, con
+  matemáticas de `luxel/src/math`). Después el hito 7 (`Texture` y `Sampler`),
+  cuyos destructores también devolverán su hueco a la tabla. Los shaders
+  propios del motor irán incrustados en el ejecutable (hoy los tests leen los
+  `.spv` de disco).
 - Idea para más adelante: sub-asignación de memoria (hoy cada buffer hace su
   propio `vkAllocateMemory`; el mínimo garantizado es 4096 asignaciones).
   Decidir tras el hito 7 entre un sub-asignador propio o VMA como excepción
