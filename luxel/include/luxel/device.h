@@ -4,6 +4,8 @@
 #include <luxel/graphics_pipeline.h>
 #include <luxel/buffer.h>
 #include <luxel/frame.h>
+#include <luxel/sampler.h>
+#include <luxel/texture.h>
 #include <cstdint>
 
 namespace luxel
@@ -42,6 +44,8 @@ namespace luxel
 		virtual void end_frame(Frame&) = 0;
 		virtual void wait_idle() = 0;
 		virtual Ref<Buffer> create_buffer(const BufferDescriptor& buffer_desc) = 0;
+		virtual Ref<Sampler> create_sampler(const SamplerDescriptor& sampler_desc) = 0;
+		virtual Ref<Texture> create_texture(const TextureDescriptor& texture_desc) = 0;
 	};
 
 	Ref<Device> create_device(const DeviceDescriptor& device_desc);

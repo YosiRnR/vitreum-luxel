@@ -3,6 +3,8 @@
 #include <luxel/swapchain.h>
 #include <luxel/graphics_pipeline.h>
 #include <luxel/buffer.h>
+#include <luxel/texture.h>
+#include <luxel/sampler.h>
 #include <luxel/frame.h>
 #include "vulkan_common.h"
 #include "vulkan_device.h"
@@ -236,6 +238,16 @@ namespace luxel::vulkan
 			throw std::runtime_error("Parámetros de creación del buffer incorrectos"); // Podría dividir los IFs para dar un mensaje más preciso
 		}
 		return VulkanBuffer::create(Ref<VulkanDevice>(this), buffer_desc);
+	}
+
+	Ref<Sampler> VulkanDevice::create_sampler(const SamplerDescriptor& sampler_desc)
+	{
+		throw std::runtime_error("No implementado aún");
+	}
+
+	Ref<Texture> VulkanDevice::create_texture(const TextureDescriptor& texture_desc)
+	{
+		throw std::runtime_error("No implementado aún");
 	}
 
 	uint32_t VulkanDevice::find_memory_type(uint32_t type_bits, vk::MemoryPropertyFlags properties) const

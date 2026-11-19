@@ -49,6 +49,21 @@ namespace luxel
 		D32_Float,
 		D24_UNorm_S8_UInt
 	};
+	inline constexpr uint8_t format_bytes_per_pixel(Format format)
+	{
+		switch (format)
+		{
+		case Format::R8G8B8A8_UNorm:    return 4;
+		case Format::R8G8B8A8_SRGB:     return 4;
+		case Format::B8G8R8A8_UNorm:    return 4;
+		case Format::B8G8R8A8_SRGB:     return 4;
+		case Format::D32_Float:         return 4;
+		case Format::D24_UNorm_S8_UInt: return 4;
+		case Format::Undefined:         return 0;
+		}
+
+		return 0;
+	}
 
 	enum class PrimitiveTopology : uint8_t
 	{

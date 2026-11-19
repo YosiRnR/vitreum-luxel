@@ -5,6 +5,8 @@
 #include <luxel/swapchain.h>
 #include <luxel/graphics_pipeline.h>
 #include <luxel/buffer.h>
+#include <luxel/texture.h>
+#include <luxel/sampler.h>
 #include <luxel/frame.h>
 #include "vulkan_common.h"
 #include "vulkan_frame.h"
@@ -112,6 +114,8 @@ namespace luxel::vulkan
 		void end_frame(Frame&) override;
 		void wait_idle() override;
 		Ref<Buffer> create_buffer(const BufferDescriptor&) override;
+		Ref<Sampler> create_sampler(const SamplerDescriptor& sampler_desc) override;
+		Ref<Texture> create_texture(const TextureDescriptor& texture_desc) override;
 
 		void enqueue_destroy(RefCounted* resource) {
 			m_deletion_queue.push(m_active_frame_index, resource);

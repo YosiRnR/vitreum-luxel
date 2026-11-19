@@ -1,7 +1,7 @@
 #pragma once
 
 #include <luxel/types.h>
-#include <type_traits>
+#include <luxel/flags.h>
 #include <cstdint>
 #include <cstddef>
 #include <ranges>
@@ -16,21 +16,8 @@ namespace luxel
 		Index       = 1 << 1
 	};
 
-	constexpr BufferUsage operator|(BufferUsage a, BufferUsage b) noexcept {
-		return static_cast<BufferUsage>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
-	}
-	
-	constexpr BufferUsage operator&(BufferUsage a, BufferUsage b) noexcept {
-		return static_cast<BufferUsage>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
-	}
-
-	constexpr BufferUsage& operator|=(BufferUsage& a, BufferUsage b) noexcept {
-		return a = a | b;
-	}
-
-	constexpr bool has_flag(BufferUsage flags, BufferUsage bit) noexcept {
-		return (flags & bit) == bit;
-	}
+	template<>
+	inline constexpr bool enable_bitmask_operators<BufferUsage> = true;
 
 	struct BufferDescriptor
 	{
