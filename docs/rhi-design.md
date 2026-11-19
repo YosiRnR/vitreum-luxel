@@ -162,7 +162,7 @@ Siete hitos pequeños, cada uno con un resultado que se puede ejecutar; el prime
 3. **`Swapchain` y el bucle de frame.** La superficie pasa a vivir aquí y el `WindowHandle` sale de `DeviceDesc`. `begin_frame` / `end_frame` y limpiar a un color. Incluye cerrar el pendiente de la ventana con `WM_SIZE` minimizado y el tamaño de cliente.
 4. **Destrucción diferida y `Ref`.** Revisar `Ref::adopt` y el contador inicial antes de usarlo en serio.
 5. **Tabla bindless y `GraphicsPipeline`.** Triángulo con vértices fijos en el shader.
-6. **`Buffer` con subida por staging y asignador temporal por frame.** Triángulo con *vertex pulling* y una matriz por frame (aquí entran las matemáticas de `luxel/src/math`).
+6. **`Buffer` con subida por staging y asignador temporal por frame.** Triángulo con *vertex pulling* y una matriz por frame (aquí entran las matemáticas, hoy públicas en `luxel/include/luxel/math`).
 7. **`Texture` y `Sampler`.** Un quad texturizado.
 
 Pasos del hito 5 (cada uno compila y se ejecuta sin avisos de validación):
@@ -190,7 +190,11 @@ Pasos del hito 6 (propuesta, se ajusta sobre la marcha):
   - 6d-2 (hecho): `VulkanFrameAllocator` (interno, `vulkan_frame_allocator.*`): buffer de almacenamiento de 1 MB (`k_frame_allocator_capacity`) en memoria visible y coherente, mapeado de forma persistente, con su hueco bindless pedido al final del constructor y liberado en el destructor (puntero crudo a la tabla, que sobrevive a los frames). `allocate` alinea el cursor a 16, lanza `runtime_error` si no cabe y devuelve el offset de inicio de la reserva; `reset_cursor()` lo pone a 0.
   - 6d-3 (hecho): un `std::unique_ptr<VulkanFrameAllocator>` por `FrameResources`, creado en `create_frames()` (la tabla bindless se crea antes que los frames). `begin_frame` llama a `reset_cursor()` tras esperar la fence y pasa el allocator a `VulkanFrame::reset`. Trampa vista: con `unique_ptr`, `.reset()` destruye el allocator y `->reset()` llama al suyo; de ahí el nombre `reset_cursor()`.
   - 6d-4 (hecho): tests 11 (allocator aislado: offsets, alineación, reset, desbordamiento, reutilización del hueco) y 12 (`Frame::allocate` en frames reales: reinicio por frame y huecos distintos entre frames en vuelo) en `test_deferred`. El contenido escrito no se verifica por lectura; se verá en el 6e.
-- **6e. Triángulo con vertex pulling y una matriz por frame** (entran las matemáticas de `luxel/src/math`).
+- **6e. Triángulo con vertex pulling y una matriz por frame (hecho).** Verificado visualmente en `test_1`: triángulo girando, sin avisos de validación. Con esto queda comprobado el contenido de los buffers subidos por staging y del asignador por frame. Subpasos:
+  - 6e-1 (hecho): `CommandList::bind_constants(std::span<const std::byte>)`, tamaño > 0, múltiplo de 4 y máximo 128 bytes (lanza si no). `VulkanCommandList` guarda el `vk::PipelineLayout` global (llega por `reset`, desde `begin_frame` a través de `VulkanFrame::reset`) y usa `stageFlags`, offset y tope de `VulkanBindlessTable::k_push_constant_range`. En D3D12 serían root constants y en OpenGL un uniform o un buffer pequeño.
+  - 6e-2 (hecho): `shader_vs.hlsl` con `[[vk::push_constant]]` (`vertex_buffer_slot`, `transform_matrix_buffer_slot`, `transform_matrix_buffer_offset`), `ByteAddressBuffer bindless_buffers[]` en el binding 0 del set 0, `Load2` para el vértice y cuatro `Load4` para la matriz. `NonUniformResourceIndex` no hace falta: el índice viene de una push constant y es uniforme en el draw. Trampa vista: la matriz de C++ es column-major y el constructor `matrix(a, b, c, d)` de HLSL toma filas, así que se carga y se traspone (`transpose(matrix(col0, col1, col2, col3))`) para que `mul(mat, v)` equivalga a `M * v`.
+  - 6e-3 (hecho): las matemáticas pasan a ser públicas: `luxel/include/luxel/math/vectors.h` y `matrix4.h` (namespace `luxel::math`), incluidas desde `luxel.h`. La aplicación y el motor comparten tipos sin capa de traducción.
+  - 6e-4 (hecho): `test_1` crea el buffer de vértices con `from_data(..., Storage)`, y cada frame escribe `rotateZ(angle)` con `frame->allocate`, empuja `{ vb_slot, slot, offset }` con `bind_constants` y dibuja.
 
 Al cerrar cada hito: ejecutar con validación sin avisos y repasar en papel cómo sería cada función nueva en D3D12 y en OpenGL.
 

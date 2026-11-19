@@ -88,8 +88,8 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   antes de encolar (si no, el pipeline en cola mantendría vivo al device);
   probado en `test_deferred` con `ref_count()`. Shaders en `luxel/shaders`
   (`.hlsl` versionados, `.spv` en `.gitignore`, compilados a mano con `dxc`).
-- En curso: matemáticas propias en luxel/src/math. Plan de hitos en
-  `docs/rhi-design.md`.
+- En curso: matemáticas propias, públicas en `luxel/include/luxel/math`
+  (`luxel::math`). Plan de hitos en `docs/rhi-design.md`.
   5e hecho: triángulo en `test_1` con vértices fijos en el shader. El set
   bindless se enlaza en `VulkanDevice::begin_frame` (hay que hacerlo en cada
   frame: el pool de comandos se resetea), viewport y scissor se fijan en
@@ -100,7 +100,7 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   dependencia de `luxel`); el perfil y la entrada se deducen del sufijo del
   nombre. `test_1` y `test_deferred` reciben la carpeta con la definición
   `LUXEL_SHADER_DIR`.
-  Hito 6 del RHI (6a-6d hechos): `Buffer`. API pública en
+  Hito 6 del RHI (6a-6e hechos): `Buffer`. API pública en
   `luxel/include/luxel/buffer.h`: `BufferUsage` (flags `Storage`, `Index`,
   `TransferDst`, con `|`, `&`, `|=` y `has_flag`), `BufferDescriptor` (con
   `from_data()` para crear el descriptor desde un rango contiguo) y `Buffer`
@@ -135,13 +135,25 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   esperar la fence. Vive en un `unique_ptr` dentro de `FrameResources`
   (`create_frames()` va después de crear la tabla bindless). Cuidado:
   `unique_ptr::reset()` destruye el objeto; por eso el método se llama
-  `reset_cursor()`. Tests 11 y 12 de `test_deferred`; el contenido se
-  verificará en el 6e.
-- Siguiente: 6e (triángulo con vertex pulling y una matriz por frame, con
-  matemáticas de `luxel/src/math`). Después el hito 7 (`Texture` y `Sampler`),
-  cuyos destructores también devolverán su hueco a la tabla. Los shaders
-  propios del motor irán incrustados en el ejecutable (hoy los tests leen los
-  `.spv` de disco).
+  `reset_cursor()`. Tests 11 y 12 de `test_deferred`.
+  6e hecho (hito 6 completo): triángulo con vertex pulling y una matriz por
+  frame, girando en `test_1` sin avisos de validación (esto verifica por fin el
+  contenido de los buffers subidos y del asignador por frame).
+  `CommandList::bind_constants(span)` (push constants: tamaño > 0, múltiplo de
+  4, máximo 128; usa `k_push_constant_range`; el layout global llega a
+  `VulkanCommandList` por `reset`). El shader lee los vértices y la matriz de
+  `ByteAddressBuffer bindless_buffers[]` con los índices y el offset de las push
+  constants; la matriz (column-major en C++) se carga y se traspone en HLSL.
+  Matemáticas movidas a la API pública (`luxel/include/luxel/math`, incluidas
+  desde `luxel.h`).
+- Siguiente: hito 7 (`Texture` y `Sampler`, un quad texturizado), cuyos
+  destructores también devolverán su hueco a la tabla. Los shaders propios del
+  motor irán incrustados en el ejecutable (hoy los tests leen los `.spv` de
+  disco).
+- Entorno de compilación (para el asistente): desde Git Bash, cargar
+  `vcvars64.bat` de VS 2026 (`C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Auxiliary\Build`)
+  y `cmake --build out/build/clangcl-debug`. No hay presets de build, solo de
+  configuración.
 - Idea para más adelante: sub-asignación de memoria (hoy cada buffer hace su
   propio `vkAllocateMemory`; el mínimo garantizado es 4096 asignaciones).
   Decidir tras el hito 7 entre un sub-asignador propio o VMA como excepción
