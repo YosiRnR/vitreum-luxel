@@ -171,7 +171,8 @@ namespace luxel::vulkan
 			vk_swapchain.image_view(index.value()),
 			vk_swapchain.vk_extent(),
 			vk_swapchain,
-			index.value()
+			index.value(),
+			*m_bindless_table->pipeline_layout()
 		);
 
 		return &m_frame;

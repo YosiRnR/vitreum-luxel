@@ -1,5 +1,5 @@
 #pragma once
-#include "vectors.h"
+#include <luxel/math/vectors.h>
 #include <array>
 #include <cmath>
 #include <algorithm>

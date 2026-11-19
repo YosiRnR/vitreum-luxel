@@ -16,8 +16,8 @@ namespace luxel::vulkan
 	public:
 		static constexpr vk::PushConstantRange k_push_constant_range{
 			.stageFlags = vk::ShaderStageFlagBits::eAll,
-			.offset = 0,
-			.size = 128 // 128 bytes garantizados por Vulkan
+			.offset     = 0,
+			.size       = 128 // 128 bytes garantizados por Vulkan
 		};
 
 		VulkanBindlessTable(const vk::raii::Device& device, const RequestedDeviceMaximums& dev_maximus);

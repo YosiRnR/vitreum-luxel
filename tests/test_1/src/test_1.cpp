@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <vector>
 #include <format>
+#include <array>
 #include <span>
 
 static luxel::WindowHandle to_luxel(const vitreum::NativeWindowHandle& win_handle)
@@ -65,13 +66,21 @@ int main(int argc, char** argv)
 		.vsync  = true
 	});
 
-	auto vs_code = read_binary_file(std::filesystem::path(LUXEL_SHADER_DIR) / "shader_vs.spv");
-	auto ps_code = read_binary_file(std::filesystem::path(LUXEL_SHADER_DIR) / "shader_ps.spv");
+	auto vs_code  = read_binary_file(std::filesystem::path(LUXEL_SHADER_DIR) / "shader_vs.spv");
+	auto ps_code  = read_binary_file(std::filesystem::path(LUXEL_SHADER_DIR) / "shader_ps.spv");
 	auto pipeline = render_device->create_graphics_pipeline({
 		.vs_byte_code = std::span<uint32_t>(vs_code),
 		.ps_byte_code = std::span<uint32_t>(ps_code),
 		.format       = swapchain->color_format()
 	});
+
+	const std::array<float, 6> vertices{
+		0.0f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f
+	};
+	auto vertex_buffer = render_device->create_buffer(luxel::BufferDescriptor::from_data(vertices, luxel::BufferUsage::Storage));
+	auto vb_slot_index = vertex_buffer->bindless_index();
+
+	luxel::math::Matrix4x4 xform_matrix = luxel::math::Matrix4x4::Identity();
 
 	auto extent       = swapchain->extent();
 	auto color_format = swapchain->color_format();
@@ -82,6 +91,8 @@ int main(int argc, char** argv)
 	main_wnd.set_size({ 800, 600 });
 
 	main_wnd.show();
+
+	float angle{ 0.0f };
 
 	while (!main_wnd.should_close())
 	{
@@ -106,7 +117,13 @@ int main(int argc, char** argv)
 			continue;
 		}
 
+		xform_matrix = luxel::math::Matrix4x4::rotateZ(angle);
+		angle += 0.025f;
+		auto buf_alloc = frame->allocate(std::as_bytes(std::span(xform_matrix.m)));
+		std::array<uint32_t, 3> push_constants{ vb_slot_index, buf_alloc.slot_index, buf_alloc.offset };
+
 		frame->commands().begin_rendering({ .clear = { 1.0f, 0.0f, 0.0f, 1.0f } });
+		frame->commands().bind_constants(std::as_bytes(std::span(push_constants)));
 		frame->commands().bind_pipeline(*pipeline);
 		frame->commands().draw(3);
 		frame->commands().end_rendering();

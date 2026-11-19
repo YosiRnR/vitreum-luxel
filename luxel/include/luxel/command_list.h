@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
+#include <span>
 
 namespace luxel
 {
@@ -29,6 +31,7 @@ namespace luxel
 
 		virtual void bind_pipeline(GraphicsPipeline&) = 0;
 		virtual void draw(uint32_t num_vertices) = 0;
+		virtual void bind_constants(std::span<const std::byte>) = 0; // Tamaño máximo 128 bytes y además debe ser múltiplo de 4
 	};
 
 } // namespace luxel

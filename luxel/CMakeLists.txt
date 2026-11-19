@@ -81,6 +81,8 @@ add_library(luxel STATIC
     "src/backends/vulkan/vulkan_graphics_pipeline.cpp"
     "src/backends/vulkan/vulkan_format.h"
     "include/luxel/buffer.h"
+    "include/luxel/math/vectors.h"
+    "include/luxel/math/matrix4.h"
     "src/backends/vulkan/vulkan_buffer.h"
     "src/backends/vulkan/vulkan_buffer.cpp"
     "src/backends/vulkan/vulkan_staging_buffer.h"

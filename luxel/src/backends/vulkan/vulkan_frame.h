@@ -24,12 +24,13 @@ namespace luxel::vulkan
 			vk::raii::CommandBuffer& cmd_buffer,
 			vk::Image image, const vk::raii::ImageView& view,
 			vk::Extent2D extent,
-			VulkanSwapchain& vk_swapchain, uint32_t image_index
+			VulkanSwapchain& vk_swapchain, uint32_t image_index,
+			vk::PipelineLayout pipeline_layout
 		)
 		{
 			m_swapchain = &vk_swapchain;
 			m_image_index = image_index;
-			m_command_list.reset(cmd_buffer, image, view, extent);
+			m_command_list.reset(cmd_buffer, image, view, extent, pipeline_layout);
 			m_frame_allocator = &frame_allocator;
 		}
 
