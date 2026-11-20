@@ -447,6 +447,54 @@ static void test_frame_allocate(vitreum::Window& window)
 	CHECK(slots[0] != slots[1]);
 }
 
+// 13. Sampler: tiene hueco bindless, distinto por sampler, y se devuelve de
+//     forma diferida (igual que el buffer Storage del caso 7).
+static void test_sampler_slot(vitreum::Window& window)
+{
+	std::cout << "[13] sampler: hueco bindless con liberacion diferida\n";
+	FrameRig rig(window);
+
+	auto s1 = rig.device->create_sampler({});
+	auto s2 = rig.device->create_sampler({ .mag_filter = luxel::SamplerFilter::Nearest,
+	                                       .min_filter = luxel::SamplerFilter::Nearest,
+	                                       .address_mode_u = luxel::SamplerAddressMode::ClampToEdge });
+	const uint32_t idx1 = s1->bindless_index();
+	const uint32_t idx2 = s2->bindless_index();
+	CHECK(idx1 != 0 && idx2 != 0);
+	CHECK(idx1 != idx2);
+	CHECK(s2->sampler_desc().mag_filter == luxel::SamplerFilter::Nearest);
+	CHECK(s2->sampler_desc().address_mode_u == luxel::SamplerAddressMode::ClampToEdge);
+
+	s1 = {};   // se encola; el hueco NO debe estar libre todavia
+	auto s3 = rig.device->create_sampler({});
+	const uint32_t idx3 = s3->bindless_index();
+	CHECK(idx3 != 0 && idx3 != idx1 && idx3 != idx2);
+
+	s3 = {};
+	s2 = {};
+	CHECK(rig.run_frame());
+	CHECK(rig.run_frame());
+	CHECK(rig.run_frame());   // ya han pasado los frames en vuelo: huecos libres
+
+	auto s4 = rig.device->create_sampler({});
+	const uint32_t idx4 = s4->bindless_index();
+	CHECK(idx4 == idx1 || idx4 == idx2 || idx4 == idx3);   // reutiliza uno liberado
+}
+
+// 14. Soltar un sampler no deja al device retenido (la cola lo destruye al
+//     soltar el device y no antes de tiempo).
+static void test_sampler_releases_device()
+{
+	std::cout << "[14] sampler: sin retener el device\n";
+	auto device = make_device();
+	{
+		auto sampler = device->create_sampler({});
+		CHECK(sampler->bindless_index() != 0);
+		CHECK(device->ref_count() == 2);   // nosotros + el sampler
+	}
+	CHECK(device->ref_count() == 1);
+}
+
 int main()
 {
 	test_not_destroyed_immediately();
@@ -471,6 +519,9 @@ int main()
 
 	test_frame_allocator();
 	test_frame_allocate(window);
+
+	test_sampler_slot(window);
+	test_sampler_releases_device();
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;

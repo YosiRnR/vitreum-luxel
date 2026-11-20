@@ -92,7 +92,7 @@ add_library(luxel STATIC
     "src/backends/vulkan/vulkan_frame.cpp"
     "include/luxel/sampler.h"
     "include/luxel/texture.h"
- "include/luxel/flags.h")
+ "include/luxel/flags.h" "src/backends/vulkan/vulkan_sampler.h" "src/backends/vulkan/vulkan_sampler.cpp")
 
 add_dependencies(luxel compile_shaders)
 

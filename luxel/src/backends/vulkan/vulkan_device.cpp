@@ -11,6 +11,7 @@
 #include "vulkan_swapchain.h"
 #include "vulkan_graphics_pipeline.h"
 #include "vulkan_buffer.h"
+#include "vulkan_sampler.h"
 #include "vulkan_platform.h"
 #include "vulkan_frame.h"
 #include "vulkan_physical_device.h"
@@ -242,7 +243,7 @@ namespace luxel::vulkan
 
 	Ref<Sampler> VulkanDevice::create_sampler(const SamplerDescriptor& sampler_desc)
 	{
-		throw std::runtime_error("No implementado aún");
+		return VulkanSampler::create(Ref<VulkanDevice>(this), sampler_desc);
 	}
 
 	Ref<Texture> VulkanDevice::create_texture(const TextureDescriptor& texture_desc)

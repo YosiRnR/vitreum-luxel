@@ -10,13 +10,18 @@ namespace luxel
 
 	struct SamplerDescriptor
 	{
-		SamplerFilter filter{ SamplerFilter::Linear };
-		SamplerAddressMode address_mode{ SamplerAddressMode::Repeat };
+		SamplerFilter mag_filter{ SamplerFilter::Linear };
+		SamplerFilter min_filter{ SamplerFilter::Linear };
+		SamplerAddressMode address_mode_u{ SamplerAddressMode::Repeat };
+		SamplerAddressMode address_mode_v{ SamplerAddressMode::Repeat };
+		SamplerAddressMode address_mode_w{ SamplerAddressMode::Repeat };
 	};
 
 	class Sampler : public RefCounted
 	{
 	public:
+		virtual ~Sampler() = default;
+
 		virtual uint32_t bindless_index() const = 0;
 
 		// Accesores públicos
