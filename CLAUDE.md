@@ -146,10 +146,29 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   constants; la matriz (column-major en C++) se carga y se traspone en HLSL.
   Matemáticas movidas a la API pública (`luxel/include/luxel/math`, incluidas
   desde `luxel.h`).
-- Siguiente: hito 7 (`Texture` y `Sampler`, un quad texturizado), cuyos
-  destructores también devolverán su hueco a la tabla. Los shaders propios del
-  motor irán incrustados en el ejecutable (hoy los tests leen los `.spv` de
-  disco).
+  Hito 7 del RHI (7a-7e hechos): `Texture` y `Sampler`. API pública en
+  `luxel/include/luxel/` (`texture.h`, `sampler.h`) y `flags.h`, con
+  operadores de bitmask genéricos (`enable_bitmask_operators<T>`, activado por
+  enum junto a su definición) que usan `BufferUsage` y `TextureUsage`.
+  `TextureDescriptor` (ancho, alto, `Format`, `usage`, `mip_levels` fijo a 1 y
+  `initial_data` obligatorio por ahora) y `SamplerDescriptor` (filtros mag/min y
+  modos de dirección U/V/W); `format_bytes_per_pixel()` en `types.h`.
+  `VulkanSampler`: `VkSampler` + hueco bindless, destrucción diferida.
+  `VulkanTexture`: `VkImage` (`eSampled | eTransferDst`) con memoria
+  `eDeviceLocal`, vista y hueco; `upload()` sube por staging dentro de
+  `submit_immediate` con barreras Undefined -> TransferDst -> ShaderReadOnly
+  antes de reservar el hueco. Trampa vista: el staging debe vivir fuera de la
+  lambda de `submit_immediate` (la lambda solo graba; si el staging muere ahí,
+  la GPU copia desde un buffer destruido y el driver se cae). `create_texture`
+  valida tamaño, formato, uso, mips y tamaño de los datos. Tests 13-16 de
+  `test_deferred`. 7e: quad texturizado en `test_1` (tablero de ajedrez
+  generado a mano, shaders con `Texture2D` y `SamplerState` bindless, `draw(6)`).
+  Pendiente de comprobar: orientación de la V (+Y va hacia abajo en Vulkan) y
+  orden de bytes RGBA/BGRA con una textura asimétrica y en color.
+- Siguiente: 7f opcional (`bind_index_buffer` y `draw_indexed`, estrenando
+  `BufferUsage::Index`). Después, decidir la sub-asignación de memoria (ver más
+  abajo). Los shaders propios del motor irán incrustados en el ejecutable (hoy
+  los tests leen los `.spv` de disco).
 - Entorno de compilación (para el asistente): desde Git Bash, cargar
   `vcvars64.bat` de VS 2026 (`C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Auxiliary\Build`)
   y `cmake --build out/build/clangcl-debug`. No hay presets de build, solo de
