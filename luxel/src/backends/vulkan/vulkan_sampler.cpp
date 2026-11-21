@@ -2,6 +2,7 @@
 #include "vulkan_common.h"
 #include "vulkan_device.h"
 #include <luxel/sampler.h>
+#include <utility>
 
 namespace luxel::vulkan
 {
@@ -39,9 +40,9 @@ namespace luxel::vulkan
 		, m_bindless_table(&vk_device->bindless_table())
 	{
 		vk::SamplerCreateInfo sampler_info{
-			.magFilter = to_vk_sampler_filter(sampler_desc.mag_filter),
-			.minFilter = to_vk_sampler_filter(sampler_desc.min_filter),
-			.mipmapMode = vk::SamplerMipmapMode::eLinear, // De momento
+			.magFilter    = to_vk_sampler_filter(sampler_desc.mag_filter),
+			.minFilter    = to_vk_sampler_filter(sampler_desc.min_filter),
+			.mipmapMode   = vk::SamplerMipmapMode::eLinear, // De momento
 			.addressModeU = to_vk_sampler_address_mode(sampler_desc.address_mode_u),
 			.addressModeV = to_vk_sampler_address_mode(sampler_desc.address_mode_v),
 			.addressModeW = to_vk_sampler_address_mode(sampler_desc.address_mode_w),

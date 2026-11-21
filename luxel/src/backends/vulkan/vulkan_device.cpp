@@ -12,6 +12,7 @@
 #include "vulkan_graphics_pipeline.h"
 #include "vulkan_buffer.h"
 #include "vulkan_sampler.h"
+#include "vulkan_texture.h"
 #include "vulkan_platform.h"
 #include "vulkan_frame.h"
 #include "vulkan_physical_device.h"
@@ -248,7 +249,21 @@ namespace luxel::vulkan
 
 	Ref<Texture> VulkanDevice::create_texture(const TextureDescriptor& texture_desc)
 	{
-		throw std::runtime_error("No implementado aún");
+		uint8_t bpp = format_bytes_per_pixel(texture_desc.format);
+
+		if (texture_desc.width == 0 || texture_desc.height == 0 || bpp == 0) {
+			throw std::runtime_error("El tamaño de la textura no puede ser cero");
+		}
+		if (texture_desc.usage != TextureUsage::Sampled) {
+			throw std::runtime_error("Solo soportado el modo de creación de texturas 'Sampled' por ahora");
+		}
+		if (texture_desc.mip_levels != 1) {
+			throw std::runtime_error("Solo soportado número de mip levels a 1 por ahora");
+		}
+		if (texture_desc.initial_data.size() <= 0 || texture_desc.initial_data.size() != static_cast<size_t>(texture_desc.width) * texture_desc.height * bpp) {
+			throw std::runtime_error("El tamaño de la imagen de la textura no coincide con los datos informados");
+		}
+		return VulkanTexture::create(Ref<VulkanDevice>(this), texture_desc);
 	}
 
 	uint32_t VulkanDevice::find_memory_type(uint32_t type_bits, vk::MemoryPropertyFlags properties) const

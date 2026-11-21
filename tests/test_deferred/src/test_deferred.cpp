@@ -495,6 +495,91 @@ static void test_sampler_releases_device()
 	CHECK(device->ref_count() == 1);
 }
 
+// Datos de una textura RGBA8 de w x h (todo a un valor; el contenido no se
+// verifica aqui, solo la creacion).
+static std::vector<std::byte> make_texture_data(uint32_t w, uint32_t h)
+{
+	return std::vector<std::byte>(static_cast<size_t>(w) * h * 4, std::byte{ 0x80 });
+}
+
+// 15. Textura: hueco bindless propio, liberacion diferida y reutilizacion
+//     (igual que los casos 7 y 13). Solo comprueba la creacion (7c): el
+//     contenido y el layout se veran cuando exista la subida (7d).
+static void test_texture_slot(vitreum::Window& window)
+{
+	std::cout << "[15] textura: hueco bindless con liberacion diferida\n";
+	FrameRig rig(window);
+
+	const auto data = make_texture_data(4, 4);
+	const luxel::TextureDescriptor desc{
+		.width = 4, .height = 4,
+		.format = luxel::Format::R8G8B8A8_SRGB,
+		.initial_data = data
+	};
+
+	auto t1 = rig.device->create_texture(desc);
+	CHECK(t1->width() == 4 && t1->height() == 4);
+	CHECK(t1->format() == luxel::Format::R8G8B8A8_SRGB);
+	CHECK(t1->mip_levels() == 1);
+	CHECK(luxel::has_flag(t1->usage(), luxel::TextureUsage::Sampled));
+	const uint32_t idx1 = t1->bindless_index();
+	CHECK(idx1 != 0);
+
+	auto t2 = rig.device->create_texture(desc);
+	const uint32_t idx2 = t2->bindless_index();
+	CHECK(idx2 != 0 && idx2 != idx1);
+
+	t1 = {};   // se encola; el hueco NO debe estar libre todavia
+	auto t3 = rig.device->create_texture(desc);
+	const uint32_t idx3 = t3->bindless_index();
+	CHECK(idx3 != 0 && idx3 != idx1 && idx3 != idx2);
+
+	t2 = {};
+	t3 = {};
+	CHECK(rig.run_frame());
+	CHECK(rig.run_frame());
+	CHECK(rig.run_frame());   // ya han pasado los frames en vuelo
+
+	auto t4 = rig.device->create_texture(desc);
+	const uint32_t idx4 = t4->bindless_index();
+	CHECK(idx4 == idx1 || idx4 == idx2 || idx4 == idx3);   // reutiliza uno liberado
+}
+
+// 16. create_texture rechaza descriptores invalidos y no deja el device retenido.
+static void test_texture_invalid_descriptors()
+{
+	std::cout << "[16] create_texture rechaza descriptores invalidos\n";
+	auto device = make_device();
+
+	const auto data = make_texture_data(4, 4);
+	const luxel::TextureDescriptor valid{
+		.width = 4, .height = 4,
+		.format = luxel::Format::R8G8B8A8_UNorm,
+		.initial_data = data
+	};
+
+	auto throws = [&](luxel::TextureDescriptor desc) {
+		try {
+			device->create_texture(desc);
+		}
+		catch (const std::exception&) {
+			return true;
+		}
+		return false;
+	};
+
+	auto d = valid; d.width = 0;                       CHECK(throws(d));   // ancho 0
+	d = valid;      d.height = 0;                      CHECK(throws(d));   // alto 0
+	d = valid;      d.format = luxel::Format::Undefined; CHECK(throws(d)); // formato sin tamaño
+	d = valid;      d.usage = luxel::TextureUsage::None; CHECK(throws(d)); // sin uso
+	d = valid;      d.width = 8;                       CHECK(throws(d));   // datos != 8*4*4
+	d = valid;      d.initial_data = {};               CHECK(throws(d));   // sin datos (por ahora)
+	d = valid;      d.mip_levels = 2;                  CHECK(throws(d));   // solo 1 mip por ahora
+
+	CHECK(!throws(valid));
+	CHECK(device->ref_count() == 1);   // ni los fallos ni la textura valida retienen el device
+}
+
 int main()
 {
 	test_not_destroyed_immediately();
@@ -522,6 +607,9 @@ int main()
 
 	test_sampler_slot(window);
 	test_sampler_releases_device();
+
+	test_texture_slot(window);
+	test_texture_invalid_descriptors();
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;
