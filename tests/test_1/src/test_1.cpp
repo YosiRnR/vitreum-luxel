@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <stdexcept>
 #include <iostream>
+#include <algorithm>
 #include <fstream>
 #include <cstdint>
 #include <cstddef>
@@ -74,14 +75,12 @@ static std::vector<std::byte> make_checkerboard(uint32_t width, uint32_t height,
 		}
 	}
 
+	// Casilla amarilla en el píxel (0,0): permite comprobar la orientación de la
+	// textura (debe verse arriba a la izquierda) y el orden de los canales.
 	for (uint32_t y = 0; y < tile_size; ++y)
 	{
 		for (uint32_t x = 0; x < tile_size; ++x)
 		{
-			//const bool light = ((x / tile_size) + (y / tile_size)) % 2 == 0;
-
-			//const std::byte color = light ? std::byte{ 0xE0 } : std::byte{ 0x20 };
-
 			const size_t i = (static_cast<size_t>(y) * width + x) * 4;
 
 			pixels[i + 0] = std::byte{ 0xFF }; // R
@@ -94,62 +93,76 @@ static std::vector<std::byte> make_checkerboard(uint32_t width, uint32_t height,
 	return pixels;
 }
 
+// Una ventana con su swapchain. El orden de los miembros importa: se destruyen
+// en orden inverso a la declaración, así la swapchain muere antes que la ventana
+// de la que depende (su surface se creó a partir del HWND).
 struct RenderWindow
 {
 	vitreum::Window window{};
 	luxel::Ref<luxel::Swapchain> swapchain{};
+	luxel::ClearColor clear{ 0.0f, 0.0f, 0.0f, 1.0f };
+	bool confirm_close{ false };        // Pregunta antes de cerrar (la ventana principal)
+	luxel::Size2D last_extent{};        // Para avisar solo cuando cambia el tamaño de la swapchain
 };
 
-int main(int argc, char** argv)
+// Recursos que se dibujan en todas las ventanas.
+struct Scene
 {
-	auto render_device = luxel::create_device(luxel::DeviceDescriptor{
-		.backend = luxel::Backend::Vulkan,
-		.debug = true
-	});
+	luxel::Ref<luxel::GraphicsPipeline> pipeline;
+	luxel::Ref<luxel::Texture> texture;
+	luxel::Ref<luxel::Sampler> sampler;
+	luxel::Ref<luxel::Buffer> vertex_buffer;
+	luxel::Ref<luxel::Buffer> index_buffer;
+	uint32_t index_count{};
+};
 
-	vitreum::Window main_wnd{};
-	main_wnd.create({ "Vitreum Window",{ 1920, 1080 } });
-	auto swapchain = render_device->create_swapchain({
-		.window = to_luxel(main_wnd.native_handle()),
-		.size   = { static_cast<uint32_t>(main_wnd.width()), static_cast<uint32_t>(main_wnd.height()) },
+// vitreum::Window no se puede mover, por eso las ventanas viven en unique_ptr.
+static std::unique_ptr<RenderWindow> make_render_window(luxel::Device& device, const char* title, vitreum::Size size,
+                                                        luxel::ClearColor clear, bool confirm_close)
+{
+	auto render_window = std::make_unique<RenderWindow>();
+	if (!render_window->window.create({ title, size })) {
+		throw std::runtime_error("No se pudo crear la ventana");
+	}
+
+	render_window->swapchain = device.create_swapchain({
+		.window = to_luxel(render_window->window.native_handle()),
+		.size   = { static_cast<uint32_t>(render_window->window.width()), static_cast<uint32_t>(render_window->window.height()) },
 		.vsync  = true
 	});
+	render_window->clear         = clear;
+	render_window->confirm_close = confirm_close;
+	return render_window;
+}
 
-	auto second_window = std::make_unique<RenderWindow>();
-	second_window->window.create({ "Second Vitreum Window",{ 800, 600 } });
-	second_window->swapchain = render_device->create_swapchain({
-		.window = to_luxel(second_window->window.native_handle()),
-		.size = { static_cast<uint32_t>(second_window->window.width()), static_cast<uint32_t>(second_window->window.height()) },
-		.vsync = true
-	});
+static Scene create_scene(luxel::Device& device, luxel::Format color_format)
+{
+	Scene scene;
 
+	auto vs_code = read_binary_file(std::filesystem::path(LUXEL_SHADER_DIR) / "shader_vs.spv");
+	auto ps_code = read_binary_file(std::filesystem::path(LUXEL_SHADER_DIR) / "shader_ps.spv");
 
-	auto vs_code  = read_binary_file(std::filesystem::path(LUXEL_SHADER_DIR) / "shader_vs.spv");
-	auto ps_code  = read_binary_file(std::filesystem::path(LUXEL_SHADER_DIR) / "shader_ps.spv");
-	auto pipeline = render_device->create_graphics_pipeline({
+	// El pipeline se crea para un formato de color: sirve para las ventanas cuya
+	// swapchain use ese mismo formato (aquí, todas).
+	scene.pipeline = device.create_graphics_pipeline({
 		.vs_byte_code = std::span<uint32_t>(vs_code),
 		.ps_byte_code = std::span<uint32_t>(ps_code),
-		.format       = swapchain->color_format()
+		.format       = color_format
 	});
 
 	constexpr uint32_t width  = 256;
 	constexpr uint32_t height = 256;
 	auto pixels = make_checkerboard(width, height, 32);
-	luxel::TextureDescriptor texture_desc{
+	scene.texture = device.create_texture({
 		.width        = width,
 		.height       = height,
 		.format       = luxel::Format::R8G8B8A8_SRGB,
 		.usage        = luxel::TextureUsage::Sampled,
 		.mip_levels   = 1,
 		.initial_data = pixels
-	};
-	auto texture = render_device->create_texture(texture_desc);
-	auto texture_slot = texture->bindless_index();
+	});
 
-	luxel::SamplerDescriptor sampler_desc{
-	};
-	auto sampler = render_device->create_sampler(sampler_desc);
-	auto sampler_slot = sampler->bindless_index();
+	scene.sampler = device.create_sampler({});
 
 	const std::array<float, 16> vertices{
 		// posición      // UV
@@ -158,102 +171,132 @@ int main(int argc, char** argv)
 		 0.5f,  0.5f,    1.0f, 1.0f, // arriba derecha
 		-0.5f,  0.5f,    0.0f, 1.0f  // arriba izquierda
 	};
-	auto vertex_buffer = render_device->create_buffer(luxel::BufferDescriptor::from_data(vertices, luxel::BufferUsage::Storage));
-	auto vb_slot_index = vertex_buffer->bindless_index();
+	scene.vertex_buffer = device.create_buffer(luxel::BufferDescriptor::from_data(vertices, luxel::BufferUsage::Storage));
 
-	const std::array<uint16_t, 6> indices{
-		0, 1, 2, 0, 2, 3
+	const std::array<uint16_t, 6> indices{ 0, 1, 2, 0, 2, 3 };
+	scene.index_buffer = device.create_buffer(luxel::BufferDescriptor::from_data(indices, luxel::BufferUsage::Index));
+	scene.index_count  = static_cast<uint32_t>(indices.size());
+
+	return scene;
+}
+
+// Consume los eventos de una ventana. Cada ventana trae su propia cola.
+static void process_events(RenderWindow& render_window)
+{
+	auto& window = render_window.window;
+
+	while (window.has_pending_events())
+	{
+		auto event = window.pop_event();
+		if (!event) {
+			continue;
+		}
+
+		if (event->type == vitreum::WinEventType::Close)
+		{
+			// WM_CLOSE ya dejó should_close a true. Si la ventana pide confirmación,
+			// la respuesta del usuario decide si sigue o no.
+			if (render_window.confirm_close) {
+				window.cancel_close(
+					vitreum::message_box_okcancel(window.native_handle(), "¿Desea cerrar la ventana?", "WARNING")
+				);
+			}
+		}
+		else if (event->type == vitreum::WinEventType::Resize)
+		{
+			render_window.swapchain->resize({ static_cast<uint32_t>(event->size.width), static_cast<uint32_t>(event->size.height) });
+		}
+	}
+}
+
+// Un frame completo en una ventana. Si no se puede pintar (swapchain obsoleta o
+// recreándose) simplemente no hace nada: ya se volverá a intentar en la vuelta siguiente.
+static void render_window_frame(luxel::Device& device, RenderWindow& render_window, const Scene& scene, float angle)
+{
+	auto* frame = device.begin_frame(*render_window.swapchain);
+	if (frame == nullptr) {
+		return;
+	}
+
+	const auto xform_matrix = luxel::math::Matrix4x4::rotateZ(angle);
+	auto buf_alloc = frame->allocate(std::as_bytes(std::span(xform_matrix.m)));
+	const std::array<uint32_t, 5> push_constants{
+		scene.vertex_buffer->bindless_index(), buf_alloc.slot_index, buf_alloc.offset,
+		scene.texture->bindless_index(), scene.sampler->bindless_index()
 	};
-	auto index_buffer  = render_device->create_buffer(luxel::BufferDescriptor::from_data(indices, luxel::BufferUsage::Index));
 
-	luxel::math::Matrix4x4 xform_matrix = luxel::math::Matrix4x4::Identity();
+	auto& commands = frame->commands();
+	commands.begin_rendering({ .clear = render_window.clear });
+	commands.bind_constants(std::as_bytes(std::span(push_constants)));
+	commands.bind_index_buffer(*scene.index_buffer, luxel::IndexType::Uint16);
+	commands.bind_pipeline(*scene.pipeline);
+	commands.draw_indexed(scene.index_count);
+	commands.end_rendering();
 
-	auto extent       = swapchain->extent();
-	auto color_format = swapchain->color_format();
+	device.end_frame(*frame);
+
+	const auto now = render_window.swapchain->extent();
+	if (now.width != render_window.last_extent.width || now.height != render_window.last_extent.height) {
+		std::cout << std::format("Swapchain: {} x {}\n", now.width, now.height);
+		render_window.last_extent = now;
+	}
+}
+
+int main(int argc, char** argv)
+{
+	auto render_device = luxel::create_device(luxel::DeviceDescriptor{
+		.backend = luxel::Backend::Vulkan,
+		.debug   = true
+	});
+
+	// La primera ventana es la principal (pide confirmación al cerrar).
+	std::vector<std::unique_ptr<RenderWindow>> windows;
+	windows.push_back(make_render_window(*render_device, "Vitreum Window",       { 1920, 1080 }, { 1.0f, 0.0f, 0.0f, 1.0f }, true));
+	windows.push_back(make_render_window(*render_device, "Second Vitreum Window", {  800,  600 }, { 0.0f, 0.0f, 1.0f, 1.0f }, false));
+
+	const auto color_format = windows.front()->swapchain->color_format();
+	const auto extent       = windows.front()->swapchain->extent();
 	std::cout << std::format("      Extent: {} x {}\n", extent.width, extent.height);
 	std::cout << std::format("Color Format: {}\n", static_cast<uint8_t>(color_format));
 
-	main_wnd.show();
-	second_window->window.show();
+	Scene scene = create_scene(*render_device, color_format);
+
+	for (auto& render_window : windows) {
+		render_window->window.show();
+	}
 
 	float angle{ 0.0f };
 
-	while (!main_wnd.should_close())
+	// El programa termina cuando se cierra la última ventana.
+	while (!windows.empty())
 	{
-		main_wnd.poll_events();
-
-		if (second_window)
-		{
-			second_window->window.poll_events();
-			while (second_window->window.has_pending_events())
-			{
-				auto event = second_window->window.pop_event();
-				if (event && event->type == vitreum::WinEventType::Close) {
-					second_window.reset();
-					break;
-				}
-			}
+		// Todas las ventanas comparten el hilo de mensajes; cada una entrega solo los suyos.
+		for (auto& render_window : windows) {
+			render_window->window.poll_events();
+			process_events(*render_window);
 		}
 
-		while (main_wnd.has_pending_events())
-		{
-			auto event = main_wnd.pop_event();
-
-			if (event && event->type == vitreum::WinEventType::Close) {
-				main_wnd.cancel_close(
-					vitreum::message_box_okcancel(main_wnd.native_handle(), "¿Desea cerrar la ventana?", "WARNING")
-				);
-			}
-			else if (event && event->type == vitreum::WinEventType::Resize) {
-				swapchain->resize({ static_cast<uint32_t>(event->size.width), static_cast<uint32_t>(event->size.height) });
-			}
+		// Ventanas cerradas: se destruyen aquí (swapchain primero, luego la ventana).
+		std::erase_if(windows, [](const auto& render_window) { return render_window->window.should_close(); });
+		if (windows.empty()) {
+			break;
 		}
 
-		// ¿Esta minimizada la ventana?
-		if (main_wnd.is_minimized())
-		{
-			main_wnd.wait_events();
+		// Si todas están minimizadas no hay nada que pintar: dormir hasta el siguiente mensaje.
+		const bool all_minimized = std::ranges::all_of(windows, [](const auto& render_window) {
+			return render_window->window.is_minimized();
+		});
+		if (all_minimized) {
+			windows.front()->window.wait_events();
 			continue;
 		}
 
-		// Main window
-		auto* frame = render_device->begin_frame(*swapchain);
-		if (frame == nullptr) {
-			continue;
-		}
-
-		xform_matrix = luxel::math::Matrix4x4::rotateZ(angle);
 		angle += 0.025f;
-		auto buf_alloc = frame->allocate(std::as_bytes(std::span(xform_matrix.m)));
-		std::array<uint32_t, 5> push_constants{ vb_slot_index, buf_alloc.slot_index, buf_alloc.offset, texture_slot, sampler_slot };
-
-		frame->commands().begin_rendering({ .clear = { 1.0f, 0.0f, 0.0f, 1.0f } });
-		frame->commands().bind_constants(std::as_bytes(std::span(push_constants)));
-		frame->commands().bind_index_buffer(*index_buffer, luxel::IndexType::Uint16);
-		frame->commands().bind_pipeline(*pipeline);
-		frame->commands().draw_indexed(static_cast<uint32_t>(indices.size()));
-		frame->commands().end_rendering();
-
-		render_device->end_frame(*frame);
-
-		// Second window
-		if (second_window)
+		for (auto& render_window : windows)
 		{
-			frame = render_device->begin_frame(*second_window->swapchain);
-			if (frame == nullptr) {
-				continue;
+			if (!render_window->window.is_minimized()) {
+				render_window_frame(*render_device, *render_window, scene, angle);
 			}
-			frame->commands().begin_rendering({ .clear = { 0.0f, 0.0f, 1.0f, 1.0f } });
-			frame->commands().end_rendering();
-
-			render_device->end_frame(*frame);
-		}
-
-		static luxel::Size2D last{};
-		auto now = swapchain->extent();
-		if (now.width != last.width || now.height != last.height) {
-			std::cout << std::format("Swapchain: {} x {}\n", now.width, now.height);
-			last = now;
 		}
 	}
 

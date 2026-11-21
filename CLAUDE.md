@@ -199,12 +199,15 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   `WM_CLOSE` solo pide el cierre (`should_close` y evento `Close`); la
   destrucción es la del objeto `Window`. `test_1` abre una segunda ventana con
   su swapchain en una struct `RenderWindow` (ventana declarada antes que la
-  swapchain, así la swapchain muere primero) y la destruye al recibir `Close`.
+  swapchain, así la swapchain muere primero). El bucle de `test_1` es genérico:
+  `std::vector<std::unique_ptr<RenderWindow>>` (la ventana no se mueve), cada una
+  con su cola de eventos (`process_events`, que atiende `Resize` y `Close`, con
+  confirmación solo en la principal), `std::erase_if` por `should_close`, `wait_events` si
+  todas están minimizadas y `render_window_frame` por ventana (si `begin_frame`
+  devuelve `nullptr` solo salta esa ventana). Termina al cerrar la última.
 - Pendiente (ventana/bucle): redibujar durante el arrastre del borde (bucle
   modal de Win32; aparcado, aporta poco: haría falta un callback de la app desde
-  `WM_ENTERSIZEMOVE`/`WM_SIZE` y sacar el frame a una función); manejar
-  `Resize` y minimizada de la segunda ventana en `test_1`; generalizar el bucle
-  a N ventanas (vector de `RenderWindow` con `erase_if`).
+  `WM_ENTERSIZEMOVE`/`WM_SIZE`; `render_window_frame` ya es una función).
 - Aparcado en la ventana (se retoma más adelante): Raw Input, DPI,
   UTF-8 en títulos.
 
