@@ -5,6 +5,7 @@
 #include <iostream>
 #include <fstream>
 #include <cstdint>
+#include <cstddef>
 #include <vector>
 #include <format>
 #include <array>
@@ -50,6 +51,36 @@ static std::vector<uint32_t> read_binary_file(const std::filesystem::path& path)
 	return data;
 }
 
+static std::vector<std::byte> make_checkerboard(uint32_t width, uint32_t height, uint32_t tile_size)
+{
+	std::vector<std::byte> pixels(
+		static_cast<size_t>(width) * height * 4);
+
+	for (uint32_t y = 0; y < height; ++y)
+	{
+		for (uint32_t x = 0; x < width; ++x)
+		{
+			const bool light =
+				((x / tile_size) + (y / tile_size)) % 2 == 0;
+
+			const std::byte color = light
+				? std::byte{ 0xE0 }
+			: std::byte{ 0x20 };
+
+			const size_t i =
+				(static_cast<size_t>(y) * width + x) * 4;
+
+			pixels[i + 0] = color;          // R
+			pixels[i + 1] = color;          // G
+			pixels[i + 2] = color;          // B
+			pixels[i + 3] = std::byte{ 0xFF }; // A
+		}
+	}
+
+	return pixels;
+}
+
+
 int main(int argc, char** argv)
 {
 	vitreum::Window main_wnd{};
@@ -74,8 +105,34 @@ int main(int argc, char** argv)
 		.format       = swapchain->color_format()
 	});
 
-	const std::array<float, 6> vertices{
-		0.0f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f
+	constexpr uint32_t width  = 256;
+	constexpr uint32_t height = 256;
+	auto pixels = make_checkerboard(width, height, 32);
+	luxel::TextureDescriptor texture_desc{
+		.width        = width,
+		.height       = height,
+		.format       = luxel::Format::B8G8R8A8_SRGB,
+		.usage        = luxel::TextureUsage::Sampled,
+		.mip_levels   = 1,
+		.initial_data = pixels
+	};
+	auto texture = render_device->create_texture(texture_desc);
+	auto texture_slot = texture->bindless_index();
+
+	luxel::SamplerDescriptor sampler_desc{
+	};
+	auto sampler = render_device->create_sampler(sampler_desc);
+	auto sampler_slot = sampler->bindless_index();
+
+	const std::array<float, 24> vertices{
+		// posición      // UV
+		-0.5f, -0.5f,    0.0f, 1.0f, // abajo izquierda
+		 0.5f, -0.5f,    1.0f, 1.0f, // abajo derecha
+		 0.5f,  0.5f,    1.0f, 0.0f, // arriba derecha
+
+		-0.5f, -0.5f,    0.0f, 1.0f, // abajo izquierda
+		 0.5f,  0.5f,    1.0f, 0.0f, // arriba derecha
+		-0.5f,  0.5f,    0.0f, 0.0f  // arriba izquierda
 	};
 	auto vertex_buffer = render_device->create_buffer(luxel::BufferDescriptor::from_data(vertices, luxel::BufferUsage::Storage));
 	auto vb_slot_index = vertex_buffer->bindless_index();
@@ -120,12 +177,12 @@ int main(int argc, char** argv)
 		xform_matrix = luxel::math::Matrix4x4::rotateZ(angle);
 		angle += 0.025f;
 		auto buf_alloc = frame->allocate(std::as_bytes(std::span(xform_matrix.m)));
-		std::array<uint32_t, 3> push_constants{ vb_slot_index, buf_alloc.slot_index, buf_alloc.offset };
+		std::array<uint32_t, 5> push_constants{ vb_slot_index, buf_alloc.slot_index, buf_alloc.offset, texture_slot, sampler_slot };
 
 		frame->commands().begin_rendering({ .clear = { 1.0f, 0.0f, 0.0f, 1.0f } });
 		frame->commands().bind_constants(std::as_bytes(std::span(push_constants)));
 		frame->commands().bind_pipeline(*pipeline);
-		frame->commands().draw(3);
+		frame->commands().draw(6);
 		frame->commands().end_rendering();
 
 		render_device->end_frame(*frame);

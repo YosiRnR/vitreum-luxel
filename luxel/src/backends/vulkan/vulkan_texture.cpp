@@ -99,8 +99,6 @@ namespace luxel::vulkan
 				.pImageMemoryBarriers    = &to_transfer
 			});
 
-			const size_t bpp = format_bytes_per_pixel(format());
-
 			command.copyBufferToImage(
 				*staging.buffer(),
 				*m_image,
