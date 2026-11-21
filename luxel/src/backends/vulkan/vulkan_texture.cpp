@@ -1,11 +1,12 @@
 #include <luxel/types.h>
 #include <luxel/texture.h>
-#include <luxel/buffer.h>
 #include "vulkan_texture.h"
 #include "vulkan_common.h"
 #include "vulkan_device.h"
 #include "vulkan_format.h"
 #include "vulkan_staging_buffer.h"
+#include <span>
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 #include <stdexcept>
@@ -61,86 +62,88 @@ namespace luxel::vulkan
 		};
 		m_view = vk::raii::ImageView(m_ref_device->logical_device(), view_info);
 
+		upload(texture_desc.initial_data);
+
 		// Entrada en el SlotAllocator de Texturas
 		m_slot_index = m_bindless_table->allocate_texture_slot(*m_view);
 	}
 
-	//void VulkanTexture::upload() // Cuando lleguemos se refina
-	//{
-	//	m_ref_device->submit_immediate([&staging, &buffer_desc, this](vk::raii::CommandBuffer& command)
-	//		{
-	//			vk::ImageMemoryBarrier2 to_transfer{
-	//				.srcStageMask = vk::PipelineStageFlagBits2::eNone,
-	//				.srcAccessMask = vk::AccessFlags2{},
-	//				.dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
-	//				.dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
-	//				.oldLayout = vk::ImageLayout::eUndefined,
-	//				.newLayout = vk::ImageLayout::eTransferDstOptimal,
-	//				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-	//				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-	//				.image = *m_image,
-	//				.subresourceRange = {
-	//					.aspectMask = vk::ImageAspectFlagBits::eColor,
-	//					.baseMipLevel = mip_levels(),
-	//					.levelCount = 1,
-	//					.baseArrayLayer = 1,
-	//					.layerCount = 1
-	//				}
-	//			};
+	void VulkanTexture::upload(std::span<const std::byte> data)
+	{
+		VulkanStagingBuffer staging(*m_ref_device, data.size());
+		staging.write_data(data);
 
-	//			command.pipelineBarrier2(vk::DependencyInfo{
-	//				.imageMemoryBarrierCount = 1,
-	//				.pImageMemoryBarriers = &to_transfer
-	//				});
+		m_ref_device->submit_immediate([this, &staging](vk::raii::CommandBuffer& command)
+		{
+			vk::ImageMemoryBarrier2 to_transfer{
+				.srcStageMask  = vk::PipelineStageFlagBits2::eNone,
+				.srcAccessMask = vk::AccessFlags2{},
+				.dstStageMask  = vk::PipelineStageFlagBits2::eTransfer,
+				.dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
+				.oldLayout     = vk::ImageLayout::eUndefined,
+				.newLayout     = vk::ImageLayout::eTransferDstOptimal,
+				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+				.image            = *m_image,
+				.subresourceRange = {
+					.aspectMask     = vk::ImageAspectFlagBits::eColor,
+					.baseMipLevel   = 0,
+					.levelCount     = 1,
+					.baseArrayLayer = 0,
+					.layerCount     = 1
+				}
+			};
 
-	//			const size_t bpp = format_bytes_per_pixel(format());
-	//			if (bpp == 0) {
-	//				throw std::runtime_error("Textura con formato sin bytes por píxel definidos.");
-	//			}
+			command.pipelineBarrier2(vk::DependencyInfo{
+				.imageMemoryBarrierCount = 1,
+				.pImageMemoryBarriers    = &to_transfer
+			});
 
-	//			command.copyBufferToImage(
-	//				*staging.buffer(),
-	//				*m_image,
-	//				vk::ImageLayout::eTransferDstOptimal,
-	//				vk::BufferImageCopy{
-	//					.bufferOffset = 0,
-	//					.bufferRowLength = static_cast<uint32_t>(width() * bpp),
-	//					.bufferImageHeight = 0,
-	//					.imageSubresource{
-	//						.aspectMask = vk::ImageAspectFlagBits::eColor,
-	//						.mipLevel = 1,
-	//						.baseArrayLayer = 1,
-	//						.layerCount = 1
-	//					},
-	//					.imageOffset = { 0, 0, 0 },
-	//					.imageExtent = { width(), height(), 1 }
-	//				}
-	//			);
+			const size_t bpp = format_bytes_per_pixel(format());
 
-	//			vk::ImageMemoryBarrier2 to_final{
-	//				.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
-	//				.srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
-	//				.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader,
-	//				.dstAccessMask = vk::AccessFlagBits2::eShaderRead,
-	//				.oldLayout = vk::ImageLayout::eTransferDstOptimal,
-	//				.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-	//				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-	//				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-	//				.image = *m_image,
-	//				.subresourceRange = {
-	//					.aspectMask = vk::ImageAspectFlagBits::eColor,
-	//					.baseMipLevel = mip_levels(),
-	//					.levelCount = 1,
-	//					.baseArrayLayer = 1,
-	//					.layerCount = 1
-	//				}
-	//			};
-	//			command.pipelineBarrier2(vk::DependencyInfo{
-	//				.imageMemoryBarrierCount = 1,
-	//				.pImageMemoryBarriers = &to_final
-	//				});
-	//		});
-	//}
+			command.copyBufferToImage(
+				*staging.buffer(),
+				*m_image,
+				vk::ImageLayout::eTransferDstOptimal,
+				vk::BufferImageCopy{
+					.bufferOffset      = 0,
+					.bufferRowLength   = 0,
+					.bufferImageHeight = 0,
+					.imageSubresource{
+						.aspectMask     = vk::ImageAspectFlagBits::eColor,
+						.mipLevel       = 0,
+						.baseArrayLayer = 0,
+						.layerCount     = 1
+					},
+					.imageOffset = { 0, 0, 0 },
+					.imageExtent = { width(), height(), 1 }
+				}
+			);
+
+			vk::ImageMemoryBarrier2 to_final{
+				.srcStageMask  = vk::PipelineStageFlagBits2::eTransfer,
+				.srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+				.dstStageMask  = vk::PipelineStageFlagBits2::eFragmentShader,
+				.dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+				.oldLayout     = vk::ImageLayout::eTransferDstOptimal,
+				.newLayout     = vk::ImageLayout::eShaderReadOnlyOptimal,
+				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+				.image            = *m_image,
+				.subresourceRange = {
+					.aspectMask     = vk::ImageAspectFlagBits::eColor,
+					.baseMipLevel   = 0,
+					.levelCount     = 1,
+					.baseArrayLayer = 0,
+					.layerCount     = 1
+				}
+			};
+			command.pipelineBarrier2(vk::DependencyInfo{
+				.imageMemoryBarrierCount = 1,
+				.pImageMemoryBarriers    = &to_final
+			});
+		});
+	}
 
 	VulkanTexture::~VulkanTexture()
 	{

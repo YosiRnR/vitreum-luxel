@@ -5,6 +5,8 @@
 #include "vulkan_common.h"
 #include "vulkan_device.h"
 #include <cstdint>
+#include <cstddef>
+#include <span>
 
 namespace luxel::vulkan
 {
@@ -33,6 +35,7 @@ namespace luxel::vulkan
 		uint32_t m_slot_index{};
 		VulkanBindlessTable* m_bindless_table{ nullptr };
 
+		void upload(std::span<const std::byte> data);
 		void on_zero_refs() const override;
 	};
 
