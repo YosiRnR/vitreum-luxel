@@ -1,5 +1,6 @@
 #pragma once
 
+#include <luxel/types.h>
 #include <cstdint>
 #include <cstddef>
 #include <span>
@@ -20,6 +21,7 @@ namespace luxel
 	};
 
 	class GraphicsPipeline;
+	class Buffer;
 
 	class CommandList
 	{
@@ -32,6 +34,8 @@ namespace luxel
 		virtual void bind_pipeline(GraphicsPipeline&) = 0;
 		virtual void draw(uint32_t num_vertices) = 0;
 		virtual void bind_constants(std::span<const std::byte>) = 0; // Tamaño máximo 128 bytes y además debe ser múltiplo de 4
+		virtual void bind_index_buffer(Buffer&, IndexType) = 0;
+		virtual void draw_indexed(uint32_t index_count) = 0;
 	};
 
 } // namespace luxel

@@ -60,19 +60,32 @@ static std::vector<std::byte> make_checkerboard(uint32_t width, uint32_t height,
 	{
 		for (uint32_t x = 0; x < width; ++x)
 		{
-			const bool light =
-				((x / tile_size) + (y / tile_size)) % 2 == 0;
+			const bool light = ((x / tile_size) + (y / tile_size)) % 2 == 0;
 
-			const std::byte color = light
-				? std::byte{ 0xE0 }
-			: std::byte{ 0x20 };
+			const std::byte color = light ? std::byte{ 0xE0 } : std::byte{ 0x20 };
 
-			const size_t i =
-				(static_cast<size_t>(y) * width + x) * 4;
+			const size_t i = (static_cast<size_t>(y) * width + x) * 4;
 
 			pixels[i + 0] = color;          // R
 			pixels[i + 1] = color;          // G
 			pixels[i + 2] = color;          // B
+			pixels[i + 3] = std::byte{ 0xFF }; // A
+		}
+	}
+
+	for (uint32_t y = 0; y < tile_size; ++y)
+	{
+		for (uint32_t x = 0; x < tile_size; ++x)
+		{
+			//const bool light = ((x / tile_size) + (y / tile_size)) % 2 == 0;
+
+			//const std::byte color = light ? std::byte{ 0xE0 } : std::byte{ 0x20 };
+
+			const size_t i = (static_cast<size_t>(y) * width + x) * 4;
+
+			pixels[i + 0] = std::byte{ 0xFF }; // R
+			pixels[i + 1] = std::byte{ 0xFF }; // G
+			pixels[i + 2] = std::byte{ 0x00 }; // B
 			pixels[i + 3] = std::byte{ 0xFF }; // A
 		}
 	}
@@ -111,7 +124,7 @@ int main(int argc, char** argv)
 	luxel::TextureDescriptor texture_desc{
 		.width        = width,
 		.height       = height,
-		.format       = luxel::Format::B8G8R8A8_SRGB,
+		.format       = luxel::Format::R8G8B8A8_SRGB,
 		.usage        = luxel::TextureUsage::Sampled,
 		.mip_levels   = 1,
 		.initial_data = pixels
@@ -124,18 +137,30 @@ int main(int argc, char** argv)
 	auto sampler = render_device->create_sampler(sampler_desc);
 	auto sampler_slot = sampler->bindless_index();
 
-	const std::array<float, 24> vertices{
-		// posición      // UV
-		-0.5f, -0.5f,    0.0f, 1.0f, // abajo izquierda
-		 0.5f, -0.5f,    1.0f, 1.0f, // abajo derecha
-		 0.5f,  0.5f,    1.0f, 0.0f, // arriba derecha
+	//const std::array<float, 24> vertices{
+	//	// posición      // UV
+	//	-0.5f, -0.5f,    0.0f, 1.0f, // abajo izquierda
+	//	 0.5f, -0.5f,    1.0f, 1.0f, // abajo derecha
+	//	 0.5f,  0.5f,    1.0f, 0.0f, // arriba derecha
 
-		-0.5f, -0.5f,    0.0f, 1.0f, // abajo izquierda
-		 0.5f,  0.5f,    1.0f, 0.0f, // arriba derecha
-		-0.5f,  0.5f,    0.0f, 0.0f  // arriba izquierda
+	//	-0.5f, -0.5f,    0.0f, 1.0f, // abajo izquierda
+	//	 0.5f,  0.5f,    1.0f, 0.0f, // arriba derecha
+	//	-0.5f,  0.5f,    0.0f, 0.0f  // arriba izquierda
+	//};
+	const std::array<float, 16> vertices{
+		// posición      // UV
+		-0.5f, -0.5f,    0.0f, 0.0f, // abajo izquierda
+		 0.5f, -0.5f,    1.0f, 0.0f, // abajo derecha
+		 0.5f,  0.5f,    1.0f, 1.0f, // arriba derecha
+		-0.5f,  0.5f,    0.0f, 1.0f  // arriba izquierda
 	};
 	auto vertex_buffer = render_device->create_buffer(luxel::BufferDescriptor::from_data(vertices, luxel::BufferUsage::Storage));
 	auto vb_slot_index = vertex_buffer->bindless_index();
+
+	const std::array<uint16_t, 6> indices{
+		0, 1, 2, 0, 2, 3
+	};
+	auto index_buffer  = render_device->create_buffer(luxel::BufferDescriptor::from_data(indices, luxel::BufferUsage::Index));
 
 	luxel::math::Matrix4x4 xform_matrix = luxel::math::Matrix4x4::Identity();
 
@@ -181,8 +206,10 @@ int main(int argc, char** argv)
 
 		frame->commands().begin_rendering({ .clear = { 1.0f, 0.0f, 0.0f, 1.0f } });
 		frame->commands().bind_constants(std::as_bytes(std::span(push_constants)));
+		frame->commands().bind_index_buffer(*index_buffer, luxel::IndexType::Uint16);
 		frame->commands().bind_pipeline(*pipeline);
-		frame->commands().draw(6);
+		//frame->commands().draw(6);
+		frame->commands().draw_indexed(static_cast<uint32_t>(indices.size()));
 		frame->commands().end_rendering();
 
 		render_device->end_frame(*frame);

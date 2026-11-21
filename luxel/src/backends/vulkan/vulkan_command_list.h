@@ -1,13 +1,21 @@
 #pragma once
 
+#include <luxel/types.h>
 #include <luxel/command_list.h>
 #include "vulkan_common.h"
 #include <cstdint>
 #include <cstddef>
 #include <span>
 
+namespace luxel
+{
+	class GraphicsPipeline;
+	class Buffer;
+}
+
 namespace luxel::vulkan
 {
+
 	class VulkanCommandList : public CommandList
 	{
 	public:
@@ -21,6 +29,8 @@ namespace luxel::vulkan
 		void bind_pipeline(GraphicsPipeline&) override;
 		void draw(uint32_t num_vertices) override;
 		void bind_constants(std::span<const std::byte>) override;
+		void bind_index_buffer(Buffer&, IndexType) override;
+		void draw_indexed(uint32_t index_count) override;
 
 	private:
 		vk::raii::CommandBuffer* m_command_buffer{ nullptr };

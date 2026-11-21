@@ -1,7 +1,12 @@
 #include "vulkan_command_list.h"
+#include <luxel/types.h>
+#include <luxel/flags.h>
 #include <luxel/command_list.h>
+#include <luxel/buffer.h>
+#include <luxel/graphics_pipeline.h>
 #include "vulkan_bindless_table.h"
 #include "vulkan_graphics_pipeline.h"
+#include "vulkan_buffer.h"
 #include "vulkan_common.h"
 #include <stdexcept>
 #include <cstdint>
@@ -12,6 +17,21 @@
 
 namespace luxel::vulkan
 {
+	namespace
+	{
+		vk::IndexType to_vk_index_type(IndexType index_type)
+		{
+			switch (index_type)
+			{
+			case IndexType::Uint16: return vk::IndexType::eUint16;
+			case IndexType::Uint32: return vk::IndexType::eUint32;
+			}
+
+			return vk::IndexType::eUint16;
+		}
+
+	} // namespace 
+
 	void VulkanCommandList::reset(vk::raii::CommandBuffer& cmd_buffer,
 		                          vk::Image image, const vk::raii::ImageView& view,
 		                          vk::Extent2D extent,
@@ -102,6 +122,26 @@ namespace luxel::vulkan
 			static_cast<uint32_t>(data.size()),
 			data.data()
 		);
+	}
+
+	void VulkanCommandList::bind_index_buffer(Buffer& index_buffer, IndexType index_type)
+	{
+		assert(m_command_buffer != nullptr);
+
+		if (!has_flag(index_buffer.usage(), BufferUsage::Index)) {
+			throw std::runtime_error("El buffer que se intenta utilizar como Index Buffer, no está creado con el tipo de BufferUsage::Index");
+		}
+
+		VulkanBuffer& vk_buffer = static_cast<VulkanBuffer&>(index_buffer);
+
+		m_command_buffer->bindIndexBuffer(vk_buffer.buffer(), 0, to_vk_index_type(index_type));
+	}
+
+	void VulkanCommandList::draw_indexed(uint32_t index_count)
+	{
+		assert(m_command_buffer != nullptr);
+
+		m_command_buffer->drawIndexed(index_count, 1, 0, 0, 0);
 	}
 
 } // namespace luxel::vulkan

@@ -74,6 +74,12 @@ namespace luxel
 		PointList
 	};
 
+	enum class IndexType : uint8_t
+	{
+		Uint16,
+		Uint32
+	};
+
 	class RefCounted
 	{
 		mutable std::atomic<uint32_t> m_ref_count{ 0 }; // atomic para funcionar entre hilos
