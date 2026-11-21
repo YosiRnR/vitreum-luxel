@@ -184,10 +184,14 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   Decidir tras el hito 7 entre un sub-asignador propio o VMA como excepción
   razonada a la regla de no usar librerías, dejando la reserva de memoria
   detrás de una única función interna.
+- Hecho (ventana/bucle): `Window::wait_events()` (`WaitMessage`, bloquea hasta
+  el siguiente mensaje). El bucle de la app lo llama en cada vuelta mientras la
+  ventana está minimizada (`width()`/`height()` a 0) y hace `continue`; así la
+  CPU baja a ~0% (no debe ir dentro de `poll_events()`, que es no bloqueante, ni
+  en el manejador de `Resize`, que solo dormiría una vez). El tamaño de la
+  swapchain de `test_1` ya sale de la ventana.
 - Pendiente (ventana/bucle): redibujar durante el arrastre del borde (bucle
-  modal de Win32); con la ventana minimizada el bucle de la app gira sin dormir
-  (esperar mensajes); el tamaño de la swapchain en `test_1` debería salir de la
-  ventana y no de un valor fijo; solo se admite una ventana por proceso (la
+  modal de Win32); solo se admite una ventana por proceso (la
   clase de ventana tiene nombre fijo y se registra en cada `create`), lo que
   bloquea un editor multi-ventana.
 - Aparcado en la ventana (se retoma más adelante): Raw Input, DPI,

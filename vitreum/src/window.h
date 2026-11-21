@@ -63,6 +63,7 @@ namespace vitreum
 		void show() const;
 		void poll_events();
 		bool should_close() const;
+		void wait_events();
 
 		bool pop_event(WinEvent&);
 		std::optional<WinEvent> pop_event();

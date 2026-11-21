@@ -169,6 +169,10 @@ namespace vitreum
         m_pimpl->should_close = close;
     }
 
+    void Window::wait_events() {
+        WaitMessage();
+    }
+
     float Window::content_scale() const
     {
         if (!m_pimpl || !m_pimpl->hwnd) return 1.f;

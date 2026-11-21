@@ -170,8 +170,6 @@ int main(int argc, char** argv)
 	std::cout << std::format("      Extent: {} x {}\n", extent.width, extent.height);
 	std::cout << std::format("Color Format: {}\n", static_cast<uint8_t>(color_format));
 
-	main_wnd.set_size({ 800, 600 });
-
 	main_wnd.show();
 
 	float angle{ 0.0f };
@@ -192,6 +190,13 @@ int main(int argc, char** argv)
 			else if (event && event->type == vitreum::WinEventType::Resize) {
 				swapchain->resize({ static_cast<uint32_t>(event->size.width), static_cast<uint32_t>(event->size.height) });
 			}
+		}
+
+		// ¿Esta minimizada la ventana? (podría crear un atributo m_is_minimized y exponerlo con un getter is_minimized() para dejarlo más limpio)
+		if (main_wnd.width() == 0 && main_wnd.height() == 0)
+		{
+			main_wnd.wait_events();
+			continue;
 		}
 
 		auto* frame = render_device->begin_frame(*swapchain);
