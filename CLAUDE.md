@@ -190,12 +190,23 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   CPU baja a ~0% (no debe ir dentro de `poll_events()`, que es no bloqueante, ni
   en el manejador de `Resize`, que solo dormiría una vez). El tamaño de la
   swapchain de `test_1` ya sale de la ventana.
+- Hecho (varias ventanas): la clase de ventana se registra una sola vez por
+  proceso (marca aparte, nombre constante `k_window_class_name`; todas las
+  ventanas comparten `StaticWndProc` y encuentran su `Impl` por
+  `GWLP_USERDATA`, puesto en `WM_NCCREATE`). Un contador de ventanas vivas hace
+  que `PostQuitMessage` solo se publique al destruir la última (si no, una
+  ventana que muere hace que `poll_events` de las demás vea `WM_QUIT`).
+  `WM_CLOSE` solo pide el cierre (`should_close` y evento `Close`); la
+  destrucción es la del objeto `Window`. `test_1` abre una segunda ventana con
+  su swapchain en una struct `RenderWindow` (ventana declarada antes que la
+  swapchain, así la swapchain muere primero) y la destruye al recibir `Close`.
 - Pendiente (ventana/bucle): redibujar durante el arrastre del borde (bucle
-  modal de Win32); solo se admite una ventana por proceso (la
-  clase de ventana tiene nombre fijo y se registra en cada `create`), lo que
-  bloquea un editor multi-ventana.
+  modal de Win32; aparcado, aporta poco: haría falta un callback de la app desde
+  `WM_ENTERSIZEMOVE`/`WM_SIZE` y sacar el frame a una función); manejar
+  `Resize` y minimizada de la segunda ventana en `test_1`; generalizar el bucle
+  a N ventanas (vector de `RenderWindow` con `erase_if`).
 - Aparcado en la ventana (se retoma más adelante): Raw Input, DPI,
-  UTF-8 en títulos, registro único de la clase de ventana.
+  UTF-8 en títulos.
 
 ## Compilación
 - Ficheros de CMakeLists.txt tanto en luxel como en vitreum y uno general en librerias.

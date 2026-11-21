@@ -14,6 +14,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <commdlg.h>
+#include <vector>
 
 #pragma comment(lib, "comdlg32.lib")
 
@@ -31,6 +32,10 @@ namespace vitreum
 
 	namespace
 	{
+        static bool g_wnd_class_registered{ false };
+        static uint32_t g_live_windows_counter{ 0 };
+        constexpr wchar_t k_window_class_name[] = L"VitreumWindowClass";
+
 		std::wstring utf8_to_wide(std::string_view value)
 		{
 			if (value.empty()) return {};
@@ -76,10 +81,10 @@ namespace vitreum
 
         WindowDescriptor window_desc;
         HINSTANCE        hinstance{ nullptr };
-        WNDCLASSEXW      wnd_classex{};
         HWND             hwnd{ nullptr };
 
         bool should_close{ false };
+        bool is_minimized{ false };
 
         std::vector<WinEvent> accumulated_events{};
         std::vector<WinEvent> frame_events{};
@@ -109,16 +114,20 @@ namespace vitreum
         m_pimpl->hinstance = GetModuleHandle(nullptr);
         m_pimpl->window_desc = wd;
 
-        m_pimpl->wnd_classex.cbSize        = sizeof(WNDCLASSEX);
-        m_pimpl->wnd_classex.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
-        m_pimpl->wnd_classex.hCursor       = LoadCursor(nullptr, IDC_ARROW);
-        m_pimpl->wnd_classex.hInstance     = m_pimpl->hinstance;
-        m_pimpl->wnd_classex.lpfnWndProc   = Impl::StaticWndProc;
-        m_pimpl->wnd_classex.lpszClassName = L"VitreumWindowClass";
-        m_pimpl->wnd_classex.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+        WNDCLASSEX wnd_classex{ .lpszClassName = k_window_class_name };
+        if (!g_wnd_class_registered)
+        {
+            wnd_classex.cbSize        = sizeof(WNDCLASSEX);
+            wnd_classex.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+            wnd_classex.hCursor       = LoadCursor(nullptr, IDC_ARROW);
+            wnd_classex.hInstance     = m_pimpl->hinstance;
+            wnd_classex.lpfnWndProc   = Impl::StaticWndProc;
+            wnd_classex.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
 
-        if (!RegisterClassEx(&m_pimpl->wnd_classex)) {
-            return false;
+            if (!RegisterClassEx(&wnd_classex)) {
+                return false;
+            }
+            g_wnd_class_registered = true;
         }
 
         RECT target_rect{ 0, 0, wd.size.width, wd.size.height };
@@ -126,7 +135,7 @@ namespace vitreum
 
         m_pimpl->hwnd = CreateWindowExW(
             0,
-            m_pimpl->wnd_classex.lpszClassName,
+            wnd_classex.lpszClassName,
             std::wstring(wd.title.begin(), wd.title.end()).c_str(),
             WS_OVERLAPPEDWINDOW,
             wd.position.xpos, wd.position.ypos,
@@ -137,7 +146,10 @@ namespace vitreum
             m_pimpl.get()
         );
 
-        if (!m_pimpl->hwnd) return false;
+        if (!m_pimpl->hwnd) {
+            return false;
+        }
+        g_live_windows_counter++;
 
         RECT client_rect{};
         GetClientRect(m_pimpl->hwnd, &client_rect);
@@ -167,6 +179,10 @@ namespace vitreum
 
     void Window::cancel_close(bool close) {
         m_pimpl->should_close = close;
+    }
+
+    bool Window::is_minimized() const {
+        return m_pimpl->is_minimized;
     }
 
     void Window::wait_events() {
@@ -479,11 +495,17 @@ namespace vitreum
             }
 
             case WM_DESTROY:
-                PostQuitMessage(0);
+            {
+                g_live_windows_counter--;
+                if (g_live_windows_counter == 0) {
+                    PostQuitMessage(0);
+                }
                 return 0;
-
+            }
             case WM_SIZE:
             {
+                this_window->is_minimized = (wparam == SIZE_MINIMIZED);
+
                 const int new_width  = LOWORD(lparam);
                 const int new_height = HIWORD(lparam);
 

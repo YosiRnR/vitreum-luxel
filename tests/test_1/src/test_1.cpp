@@ -6,6 +6,7 @@
 #include <fstream>
 #include <cstdint>
 #include <cstddef>
+#include <memory>
 #include <vector>
 #include <format>
 #include <array>
@@ -93,22 +94,35 @@ static std::vector<std::byte> make_checkerboard(uint32_t width, uint32_t height,
 	return pixels;
 }
 
+struct RenderWindow
+{
+	vitreum::Window window{};
+	luxel::Ref<luxel::Swapchain> swapchain{};
+};
 
 int main(int argc, char** argv)
 {
-	vitreum::Window main_wnd{};
-	main_wnd.create({ "Vitreum Window",{ 1920, 1080 } });
-
 	auto render_device = luxel::create_device(luxel::DeviceDescriptor{
 		.backend = luxel::Backend::Vulkan,
-		.debug   = true
+		.debug = true
 	});
 
+	vitreum::Window main_wnd{};
+	main_wnd.create({ "Vitreum Window",{ 1920, 1080 } });
 	auto swapchain = render_device->create_swapchain({
 		.window = to_luxel(main_wnd.native_handle()),
 		.size   = { static_cast<uint32_t>(main_wnd.width()), static_cast<uint32_t>(main_wnd.height()) },
 		.vsync  = true
 	});
+
+	auto second_window = std::make_unique<RenderWindow>();
+	second_window->window.create({ "Second Vitreum Window",{ 800, 600 } });
+	second_window->swapchain = render_device->create_swapchain({
+		.window = to_luxel(second_window->window.native_handle()),
+		.size = { static_cast<uint32_t>(second_window->window.width()), static_cast<uint32_t>(second_window->window.height()) },
+		.vsync = true
+	});
+
 
 	auto vs_code  = read_binary_file(std::filesystem::path(LUXEL_SHADER_DIR) / "shader_vs.spv");
 	auto ps_code  = read_binary_file(std::filesystem::path(LUXEL_SHADER_DIR) / "shader_ps.spv");
@@ -137,16 +151,6 @@ int main(int argc, char** argv)
 	auto sampler = render_device->create_sampler(sampler_desc);
 	auto sampler_slot = sampler->bindless_index();
 
-	//const std::array<float, 24> vertices{
-	//	// posición      // UV
-	//	-0.5f, -0.5f,    0.0f, 1.0f, // abajo izquierda
-	//	 0.5f, -0.5f,    1.0f, 1.0f, // abajo derecha
-	//	 0.5f,  0.5f,    1.0f, 0.0f, // arriba derecha
-
-	//	-0.5f, -0.5f,    0.0f, 1.0f, // abajo izquierda
-	//	 0.5f,  0.5f,    1.0f, 0.0f, // arriba derecha
-	//	-0.5f,  0.5f,    0.0f, 0.0f  // arriba izquierda
-	//};
 	const std::array<float, 16> vertices{
 		// posición      // UV
 		-0.5f, -0.5f,    0.0f, 0.0f, // abajo izquierda
@@ -166,17 +170,30 @@ int main(int argc, char** argv)
 
 	auto extent       = swapchain->extent();
 	auto color_format = swapchain->color_format();
-
 	std::cout << std::format("      Extent: {} x {}\n", extent.width, extent.height);
 	std::cout << std::format("Color Format: {}\n", static_cast<uint8_t>(color_format));
 
 	main_wnd.show();
+	second_window->window.show();
 
 	float angle{ 0.0f };
 
 	while (!main_wnd.should_close())
 	{
 		main_wnd.poll_events();
+
+		if (second_window)
+		{
+			second_window->window.poll_events();
+			while (second_window->window.has_pending_events())
+			{
+				auto event = second_window->window.pop_event();
+				if (event && event->type == vitreum::WinEventType::Close) {
+					second_window.reset();
+					break;
+				}
+			}
+		}
 
 		while (main_wnd.has_pending_events())
 		{
@@ -192,13 +209,14 @@ int main(int argc, char** argv)
 			}
 		}
 
-		// ¿Esta minimizada la ventana? (podría crear un atributo m_is_minimized y exponerlo con un getter is_minimized() para dejarlo más limpio)
-		if (main_wnd.width() == 0 && main_wnd.height() == 0)
+		// ¿Esta minimizada la ventana?
+		if (main_wnd.is_minimized())
 		{
 			main_wnd.wait_events();
 			continue;
 		}
 
+		// Main window
 		auto* frame = render_device->begin_frame(*swapchain);
 		if (frame == nullptr) {
 			continue;
@@ -213,11 +231,23 @@ int main(int argc, char** argv)
 		frame->commands().bind_constants(std::as_bytes(std::span(push_constants)));
 		frame->commands().bind_index_buffer(*index_buffer, luxel::IndexType::Uint16);
 		frame->commands().bind_pipeline(*pipeline);
-		//frame->commands().draw(6);
 		frame->commands().draw_indexed(static_cast<uint32_t>(indices.size()));
 		frame->commands().end_rendering();
 
 		render_device->end_frame(*frame);
+
+		// Second window
+		if (second_window)
+		{
+			frame = render_device->begin_frame(*second_window->swapchain);
+			if (frame == nullptr) {
+				continue;
+			}
+			frame->commands().begin_rendering({ .clear = { 0.0f, 0.0f, 1.0f, 1.0f } });
+			frame->commands().end_rendering();
+
+			render_device->end_frame(*frame);
+		}
 
 		static luxel::Size2D last{};
 		auto now = swapchain->extent();
