@@ -10,6 +10,18 @@
 
 namespace luxel::vulkan
 {
+	void MemoryAllocation::reset()
+	{
+		if (m_block && m_size > 0) {
+			m_block->free(m_offset, m_size);
+		}
+		m_memory    = vk::DeviceMemory{};
+		m_offset    = 0;
+		m_size      = 0;
+		m_mapped    = nullptr;
+		m_block     = nullptr;
+	}
+
 	VulkanMemoryAllocator::VulkanMemoryAllocator(const VulkanDevice& vk_device)
 		: m_ref_device(vk_device)
 	{
@@ -26,13 +38,13 @@ namespace luxel::vulkan
 		for (auto& block : bucket)
 		{
 			if (auto range = block->allocate(requirements.size, requirements.alignment)) {
-				return MemoryAllocation{
-					.memory = block->memory(),
-					.offset = range->offset,
-					.size   = range->size,
-					.mapped = block->mapped() ? block->mapped() + range->offset : nullptr,
-					.block  = block.get()
-				};
+				return MemoryAllocation(
+					block->memory(),
+					range->offset,
+					range->size,
+					block->mapped() ? block->mapped() + range->offset : nullptr,
+					block.get()
+				);
 			}
 		}
 
@@ -45,22 +57,16 @@ namespace luxel::vulkan
 			throw std::runtime_error("VulkanMemoryAllocator: fallo inesperado al reservar en un bloque recién creado");
 		}
 
-		MemoryAllocation alloc{
-			.memory = new_block->memory(),
-			.offset = range->offset,
-			.size   = range->size,
-			.mapped = new_block->mapped() ? new_block->mapped() + range->offset : nullptr,
-			.block  = new_block.get()
-		};
+		MemoryAllocation alloc(
+			new_block->memory(),
+			range->offset,
+			range->size,
+			new_block->mapped() ? new_block->mapped() + range->offset : nullptr,
+			new_block.get()
+		);
 
 		bucket.push_back(std::move(new_block));
 		return alloc;
-	}
-
-	void VulkanMemoryAllocator::free(const MemoryAllocation& allocation)
-	{
-		assert(allocation && "VulkanMemoryAllocator::free: asignación vacía o ya liberada");
-		allocation.block->free(allocation.offset, allocation.size);
 	}
 
 	size_t VulkanMemoryAllocator::block_count() const noexcept
