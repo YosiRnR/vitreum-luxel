@@ -22,6 +22,7 @@
 namespace luxel::vulkan
 {
 	class VulkanFrameAllocator;
+	class VulkanMemoryAllocator;
 
 	inline constexpr uint32_t k_frames_in_flight = 2;
 
@@ -134,6 +135,7 @@ namespace luxel::vulkan
 		const vk::raii::CommandPool& transient_command_pool() const { return m_transient_command_pool; }
 		const RequestedDeviceMaximums& dev_maximus() const { return m_dev_maximus; }
 		VulkanBindlessTable& bindless_table() { return *m_bindless_table; }
+		VulkanMemoryAllocator& memory_allocator() { return *m_memory_allocator; }
 
 	private:
 		explicit VulkanDevice(const DeviceDescriptor&); // Constructor privado para evitar que sea invocado desde fuera de las factorías de creación
@@ -150,6 +152,8 @@ namespace luxel::vulkan
 		vk::raii::PhysicalDevice m_physical_device{ nullptr };
 		vk::raii::Device          m_logical_device{ nullptr };
 		RequestedDeviceMaximums   m_dev_maximus{};
+
+		std::unique_ptr<VulkanMemoryAllocator> m_memory_allocator{ nullptr };
 
 		uint32_t m_graphics_queue_family_index{};
 		uint32_t  m_present_queue_family_index{};

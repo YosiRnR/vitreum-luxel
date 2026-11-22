@@ -739,6 +739,28 @@ static void test_memory_allocator()
 	CHECK(device->ref_count() == 1);
 }
 
+// 19. El VulkanDevice tiene su asignador de memoria: es utilizable y el device
+//     se destruye sin problemas (los bloques mueren antes que el vk::Device y
+//     sin asignaciones vivas, si no saltaria el assert del bloque).
+static void test_device_memory_allocator()
+{
+	std::cout << "[19] VulkanDevice::memory_allocator\n";
+	auto device = make_device();
+	auto& vk_device = *static_cast<luxel::vulkan::VulkanDevice*>(device.get());
+	auto& allocator = vk_device.memory_allocator();
+
+	CHECK(allocator.block_count() == 0);
+
+	const vk::MemoryRequirements req{ .size = 1024, .alignment = 16, .memoryTypeBits = 0xFFFFFFFFu };
+	auto a = allocator.allocate(req, vk::MemoryPropertyFlagBits::eDeviceLocal, luxel::vulkan::ResourceKind::Buffer);
+	CHECK(static_cast<bool>(a));   // operator bool es explicit: no convierte solo al pasarlo a check()
+	CHECK(allocator.block_count() == 1);
+	allocator.free(a);
+
+	// Sin asignaciones vivas el device se destruye al soltar el ultimo Ref.
+	CHECK(device->ref_count() == 1);
+}
+
 int main()
 {
 	test_not_destroyed_immediately();
@@ -772,6 +794,7 @@ int main()
 
 	test_memory_block();
 	test_memory_allocator();
+	test_device_memory_allocator();
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;

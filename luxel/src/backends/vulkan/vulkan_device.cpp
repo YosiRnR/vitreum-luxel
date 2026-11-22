@@ -18,6 +18,7 @@
 #include "vulkan_physical_device.h"
 #include "vulkan_bindless_table.h"
 #include "vulkan_frame_allocator.h"
+#include "vulkan_memory_allocator.h"
 #include <set>
 #include <ranges>
 #include <vector>
@@ -82,6 +83,8 @@ namespace luxel::vulkan
 		setup_debug_messenger();
 		pick_physical_device();
 		create_logical_device();
+
+		m_memory_allocator = std::make_unique<VulkanMemoryAllocator>(*this);
 
 		// Command Pool tipo eTransient para crear CommandBuffers de corto tiempo de vida, del tipo eOneTimeSubmit
 		vk::CommandPoolCreateInfo transient_pool_info{

@@ -55,7 +55,7 @@ namespace luxel::vulkan
 
 	private:
 		const VulkanDevice& m_ref_device;
-		std::array<std::vector<std::unique_ptr<VulkanMemoryBlock>>, k_bucket_count> m_blocks{};
+		std::array<std::vector<std::unique_ptr<VulkanMemoryBlock>>, k_bucket_count> m_blocks;
 
 		[[nodiscard]] static constexpr size_t bucket_index(ResourceKind kind, uint32_t memory_type_index) noexcept {
 			return static_cast<size_t>(kind) * VK_MAX_MEMORY_TYPES + memory_type_index;
