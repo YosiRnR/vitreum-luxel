@@ -9,12 +9,16 @@
 #include <luxel/luxel.h>
 #include "backends/vulkan/vulkan_device.h"
 #include "backends/vulkan/vulkan_frame_allocator.h"
+#include "backends/vulkan/vulkan_memory_allocator.h"
+#include "backends/vulkan/vulkan_memory_block.h"
 
 #include <filesystem>
 #include <stdexcept>
 #include <iostream>
 #include <utility>
 #include <cstdint>
+#include <cstddef>
+#include <cstring>
 #include <fstream>
 #include <vector>
 #include <span>
@@ -580,6 +584,83 @@ static void test_texture_invalid_descriptors()
 	CHECK(device->ref_count() == 1);   // ni los fallos ni la textura valida retienen el device
 }
 
+// 17. VulkanMemoryBlock aislado: reparto de offsets con alineacion, mismo
+//     vk::DeviceMemory para todas las reservas, bloque lleno, reutilizacion y
+//     puntero mapeado solo si el tipo es visible y coherente.
+static void test_memory_block()
+{
+	std::cout << "[17] VulkanMemoryBlock\n";
+	auto device = make_device();
+	auto& vk_device = *static_cast<luxel::vulkan::VulkanDevice*>(device.get());
+
+	using enum vk::MemoryPropertyFlagBits;
+	constexpr uint64_t k_block_size = 1024 * 1024;
+	const vk::MemoryPropertyFlags host_flags = eHostVisible | eHostCoherent;
+	const auto mem_props = vk_device.physical_device().getMemoryProperties();
+
+	// Bloque de tipo DeviceLocal. Puede ser visible desde la CPU (GPU integrada),
+	// asi que el puntero mapeado debe existir si y solo si el tipo lo permite.
+	{
+		const uint32_t type = vk_device.find_memory_type(0xFFFFFFFFu, eDeviceLocal);
+		const bool expect_mapped = (mem_props.memoryTypes[type].propertyFlags & host_flags) == host_flags;
+		luxel::vulkan::VulkanMemoryBlock block(vk_device, k_block_size, type);
+
+		CHECK(block.memory_type_index() == type);
+		CHECK((block.mapped() != nullptr) == expect_mapped);
+
+		auto a = block.allocate(256, 16);
+		auto b = block.allocate(100, 64);
+		auto c = block.allocate(100, 256);   // b termina en 356 -> sube a 512
+		CHECK(a.has_value() && b.has_value() && c.has_value());
+		if (!a || !b || !c) { return; }
+
+		CHECK(a->offset == 0 && a->size == 256);
+		CHECK(b->offset == 256 && b->size == 100);
+		CHECK(c->offset == 512 && c->size == 100);
+		CHECK(a->memory == block.memory() && b->memory == a->memory && c->memory == a->memory);
+		CHECK(a->block == &block);
+		CHECK((a->mapped != nullptr) == expect_mapped);
+
+		// Lleno: lo que queda libre es menos que el bloque entero.
+		CHECK(!block.allocate(k_block_size, 1).has_value());
+
+		block.free(b->offset, b->size);
+		block.free(a->offset, a->size);
+		block.free(c->offset, c->size);
+
+		// Tras liberar todo, se reutiliza desde el principio.
+		auto d = block.allocate(k_block_size, 1);
+		CHECK(d.has_value() && d->offset == 0);
+		if (d) { block.free(d->offset, d->size); }
+	}
+
+	// Bloque visible y coherente: puntero base, punteros = base + offset, y los
+	// datos escritos por una reserva no pisan los de la otra.
+	{
+		const uint32_t type = vk_device.find_memory_type(0xFFFFFFFFu, host_flags);
+		luxel::vulkan::VulkanMemoryBlock block(vk_device, k_block_size, type);
+		CHECK(block.mapped() != nullptr);
+
+		auto a = block.allocate(64, 16);
+		auto b = block.allocate(64, 16);
+		CHECK(a.has_value() && b.has_value());
+		if (!a || !b) { return; }
+
+		CHECK(a->mapped == block.mapped());
+		CHECK(b->mapped - a->mapped == static_cast<std::ptrdiff_t>(b->offset - a->offset));
+
+		std::memset(a->mapped, 0xAA, 64);
+		std::memset(b->mapped, 0x55, 64);
+		CHECK(a->mapped[0] == std::byte{ 0xAA } && a->mapped[63] == std::byte{ 0xAA });
+		CHECK(b->mapped[0] == std::byte{ 0x55 } && b->mapped[63] == std::byte{ 0x55 });
+
+		block.free(a->offset, a->size);
+		block.free(b->offset, b->size);
+	}
+
+	CHECK(device->ref_count() == 1);
+}
+
 int main()
 {
 	test_not_destroyed_immediately();
@@ -610,6 +691,8 @@ int main()
 
 	test_texture_slot(window);
 	test_texture_invalid_descriptors();
+
+	test_memory_block();
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;

@@ -92,7 +92,7 @@ add_library(luxel STATIC
     "src/backends/vulkan/vulkan_frame.cpp"
     "include/luxel/sampler.h"
     "include/luxel/texture.h"
- "include/luxel/flags.h" "src/backends/vulkan/vulkan_sampler.h" "src/backends/vulkan/vulkan_sampler.cpp" "src/backends/vulkan/vulkan_texture.h" "src/backends/vulkan/vulkan_texture.cpp" "src/free_list_allocator.h" "src/free_list_allocator.cpp")
+ "include/luxel/flags.h" "src/backends/vulkan/vulkan_sampler.h" "src/backends/vulkan/vulkan_sampler.cpp" "src/backends/vulkan/vulkan_texture.h" "src/backends/vulkan/vulkan_texture.cpp" "src/free_list_allocator.h" "src/free_list_allocator.cpp" "src/backends/vulkan/vulkan_memory_block.h" "src/backends/vulkan/vulkan_memory_block.cpp" "src/backends/vulkan/vulkan_memory_allocator.h")
 
 add_dependencies(luxel compile_shaders)
 
