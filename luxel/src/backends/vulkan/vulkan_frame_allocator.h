@@ -1,6 +1,7 @@
 #pragma once
 
 #include "vulkan_common.h"
+#include "vulkan_memory_allocator.h"
 #include <luxel/frame.h>
 #include <cstdint>
 #include <cstddef>
@@ -17,10 +18,10 @@ namespace luxel::vulkan
 	{
 		uint32_t m_slot_index{};
 		uint32_t m_cursor{};
-		void* m_mapped{ nullptr };
 		size_t m_capacity{ k_frame_allocator_capacity };
 
-		vk::raii::DeviceMemory m_buffer_memory{ nullptr };
+		// Declarados en orden inverso de destrucción
+		MemoryAllocation m_buffer_memory{};
 		vk::raii::Buffer m_buffer{ nullptr };
 
 		VulkanBindlessTable* m_bindless_table{ nullptr };

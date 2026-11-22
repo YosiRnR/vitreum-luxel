@@ -1,6 +1,7 @@
 #pragma once
 
 #include "vulkan_common.h"
+#include "vulkan_memory_allocator.h"
 #include <cstddef>
 #include <span>
 
@@ -10,7 +11,8 @@ namespace luxel::vulkan
 
 	class VulkanStagingBuffer
 	{
-		vk::raii::DeviceMemory m_buffer_memory{ nullptr };
+		// Declarados en orden inverso de destrucción
+		MemoryAllocation m_buffer_memory{};
 		vk::raii::Buffer m_buffer{ nullptr };
 		size_t m_size{};
 

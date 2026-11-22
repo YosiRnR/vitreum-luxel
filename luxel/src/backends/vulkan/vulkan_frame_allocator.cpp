@@ -3,6 +3,7 @@
 #include <luxel/frame.h>
 #include <stdexcept>
 #include <cstring>
+#include <cstdint>
 #include <cstddef>
 #include <span>
 
@@ -24,21 +25,12 @@ namespace luxel::vulkan
 		};
 		m_buffer = vk::raii::Buffer(vk_device.logical_device(), buffer_info);
 
-		// Memoria visible del buffer (en CPU)
+		// Memoria visible del buffer (ya mapeada en el bloque)
 		vk::MemoryRequirements mem_requirements = m_buffer.getMemoryRequirements();
 		vk::MemoryPropertyFlags properties      = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
 
-		uint32_t memory_type_index = vk_device.find_memory_type(mem_requirements.memoryTypeBits, properties);
-
-		vk::MemoryAllocateInfo alloc_info{
-			.allocationSize  = mem_requirements.size,
-			.memoryTypeIndex = memory_type_index
-		};
-		m_buffer_memory = vk::raii::DeviceMemory(vk_device.logical_device(), alloc_info);
-		
-		m_buffer.bindMemory(*m_buffer_memory, 0);
-
-		m_mapped = m_buffer_memory.mapMemory(0, vk::WholeSize, vk::MemoryMapFlags{});
+		m_buffer_memory = vk_device.memory_allocator().allocate(mem_requirements, properties, ResourceKind::Buffer);
+		m_buffer.bindMemory(m_buffer_memory.memory(), m_buffer_memory.offset());
 
 		m_slot_index = m_bindless_table->allocate_buffer_slot(m_buffer, {}, vk::WholeSize);
 	}
@@ -58,14 +50,12 @@ namespace luxel::vulkan
 			throw std::runtime_error("VulkanFrameAllocator overflow!");
 		}
 
-		if (buffer_data.size() == 0 || m_mapped == nullptr) {
+		std::byte* byte_mapped = m_buffer_memory.mapped();
+		if (buffer_data.size() == 0 || byte_mapped == nullptr) {
 			return {};
 		}
 
-		auto* byte_mapped = static_cast<std::byte*>(m_mapped);
-		byte_mapped += m_cursor;
-
-		std::memcpy(static_cast<void*>(byte_mapped) , buffer_data.data(), buffer_data.size());
+		std::memcpy(byte_mapped + m_cursor, buffer_data.data(), buffer_data.size());
 		auto cursor_offset = m_cursor;
 		m_cursor += static_cast<uint32_t>(buffer_data.size());
 
@@ -74,6 +64,5 @@ namespace luxel::vulkan
 			.offset     = cursor_offset
 		};
 	}
-
 
 } // namespace luxel::vulkan
