@@ -172,18 +172,32 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   `draw_indexed(index_count)`. Con vertex pulling `SV_VertexID` vale el índice
   leído, así que el shader no cambia. El quad de `test_1` usa 4 vértices y 6
   índices `uint16`.
-- Siguiente: decidir la sub-asignación de memoria (ver más abajo) y los shaders
-  propios del motor incrustados en el ejecutable (hoy los tests leen los `.spv`
-  de disco).
+  Hito 8 del RHI (sub-asignación de memoria, 8a-8b hechos): decidido hacer
+  el asignador propio (sin VMA), con lista libre first-fit. `FreeListAllocator`
+  (`luxel/src/free_list_allocator.*`, sin Vulkan): gestiona los rangos libres
+  (`MemoryRange { offset, size }`) de UN bloque abstracto, en un `std::vector`
+  ordenado por offset, sin huecos de tamaño 0 ni adyacentes (invariante).
+  `allocate(size, alignment)` devuelve `std::optional<MemoryRange>`, deja el
+  padding de la alineación como hueco libre y evita desbordamientos;
+  `free(offset, size)` busca con `lower_bound`, fusiona con los vecinos y, en
+  debug, detecta doble free y rangos fuera del bloque. Consultas `capacity()`,
+  `free_size()` e `is_empty()` (un único hueco que cubre todo). Sin mutex (la
+  política de hilos se decide en 8c). Tests 6-11 en `tests/test_free`.
+- Siguiente: 8c (`VulkanMemoryBlock` con un `vk::DeviceMemory` y su
+  `FreeListAllocator`; `VulkanMemoryAllocator` con bloques por tipo de memoria
+  y bloque nuevo cuando se llena), luego migrar buffer/textura (8d) y
+  staging/frame allocator, con mapeo y asignaciones dedicadas (8e). Después, los
+  shaders propios del motor incrustados en el ejecutable (hoy los tests leen
+  los `.spv` de disco).
 - Entorno de compilación (para el asistente): desde Git Bash, cargar
   `vcvars64.bat` de VS 2026 (`C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Auxiliary\Build`)
   y `cmake --build out/build/clangcl-debug`. No hay presets de build, solo de
   configuración.
-- Idea para más adelante: sub-asignación de memoria (hoy cada buffer hace su
-  propio `vkAllocateMemory`; el mínimo garantizado es 4096 asignaciones).
-  Decidir tras el hito 7 entre un sub-asignador propio o VMA como excepción
-  razonada a la regla de no usar librerías, dejando la reserva de memoria
-  detrás de una única función interna.
+- Sub-asignación de memoria (hito 8): hoy cada buffer y textura hace su propio
+  `vkAllocateMemory` (mínimo garantizado: 4096 asignaciones). Decidido el
+  sub-asignador propio; la reserva quedará detrás de una única función interna.
+  Cuidado pendiente: `bufferImageGranularity` entre buffers y texturas de tiling
+  óptimo que compartan bloque.
 - Hecho (ventana/bucle): `Window::wait_events()` (`WaitMessage`, bloquea hasta
   el siguiente mensaje). El bucle de la app lo llama en cada vuelta mientras la
   ventana está minimizada (`width()`/`height()` a 0) y hace `continue`; así la
