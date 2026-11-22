@@ -56,6 +56,10 @@ namespace luxel::vulkan
 			});
 		}
 
+		if (buffer_desc.initial_data.size() > VulkanMemoryAllocator::k_default_block_size) {
+			m_ref_device->memory_allocator().trim();
+		}
+
 		// Entrada en el SlotAllocator de Buffers
 		if (has_flag(buffer_desc.usage, BufferUsage::Storage)) {
 			m_slot_index = m_bindless_table->allocate_buffer_slot(m_buffer, {}, vk::WholeSize);

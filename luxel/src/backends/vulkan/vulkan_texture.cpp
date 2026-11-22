@@ -57,6 +57,10 @@ namespace luxel::vulkan
 
 		upload(texture_desc.initial_data);
 
+		if (texture_desc.initial_data.size() > VulkanMemoryAllocator::k_default_block_size) {
+			m_ref_device->memory_allocator().trim();
+		}
+
 		// Entrada en el SlotAllocator de Texturas
 		m_slot_index = m_bindless_table->allocate_texture_slot(*m_view);
 	}

@@ -857,6 +857,33 @@ static void test_memory_allocator_trim()
 	CHECK(device->ref_count() == 1);
 }
 
+// 22. Un buffer con datos iniciales mayores que un bloque pasa por un staging
+//     gigante (su propio bloque host visible). create_buffer llama a trim() al
+//     terminar la subida, asi que ese bloque no se queda reservado.
+static void test_big_upload_trims_staging()
+{
+	std::cout << "[22] subida grande: el bloque del staging se libera\n";
+	auto device = make_device();
+	auto& vk_device = *static_cast<luxel::vulkan::VulkanDevice*>(device.get());
+	auto& allocator = vk_device.memory_allocator();
+
+	using luxel::vulkan::ResourceKind;
+	using enum vk::MemoryPropertyFlagBits;
+	const uint32_t host_type  = vk_device.find_memory_type(0xFFFFFFFFu, eHostVisible | eHostCoherent);
+	const uint32_t local_type = vk_device.find_memory_type(0xFFFFFFFFu, eDeviceLocal);
+	const size_t host_before  = allocator.block_count(ResourceKind::Buffer, host_type);
+
+	const std::vector<std::byte> data(luxel::vulkan::VulkanMemoryAllocator::k_default_block_size + 4096, std::byte{ 0x5A });
+	auto buffer = device->create_buffer(luxel::BufferDescriptor::from_data(std::span<const std::byte>(data), luxel::BufferUsage::Storage));
+	CHECK(buffer->size() == data.size());
+	CHECK(allocator.block_count(ResourceKind::Buffer, local_type) >= 1);
+
+	// En una GPU integrada ambos tipos coinciden y el bloque del buffer cuenta aqui.
+	if (host_type != local_type) {
+		CHECK(allocator.block_count(ResourceKind::Buffer, host_type) == host_before);
+	}
+}
+
 int main()
 {
 	test_not_destroyed_immediately();
@@ -893,6 +920,7 @@ int main()
 	test_device_memory_allocator();
 	test_many_small_buffers();
 	test_memory_allocator_trim();
+	test_big_upload_trims_staging();
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;
