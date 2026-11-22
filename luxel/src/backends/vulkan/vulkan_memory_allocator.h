@@ -88,6 +88,18 @@ namespace luxel::vulkan
 		VulkanMemoryBlock*     m_block{ nullptr };
 	};
 
+	// Reparte la memoria de la GPU en bloques grandes (64 MB) y entrega trozos
+	// como MemoryAllocation (RAII: el trozo vuelve al bloque al morir).
+	//
+	// HILOS: NO es seguro entre hilos (decisión consciente, hito 8). Ni
+	// allocate/trim ni la liberación de una MemoryAllocation están protegidos, y
+	// no tendría sentido protegerlos solo aquí mientras la subida de datos
+	// (VulkanDevice::submit_immediate, con su pool y cola compartidos) también
+	// sea monohilo. Hoy todo ocurre en el hilo de render: crear recursos y
+	// vaciar la DeletionQueue en begin_frame. Si se llega a cargar en varios
+	// hilos, el plan es un mutex en el asignador (vector de bloques, allocate,
+	// trim) y otro en cada bloque (su FreeListAllocator), con el orden siempre
+	// asignador -> bloque; la liberación solo toma el del bloque.
 	class VulkanMemoryAllocator
 	{
 	public:

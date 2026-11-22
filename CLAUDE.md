@@ -172,7 +172,7 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   `draw_indexed(index_count)`. Con vertex pulling `SV_VertexID` vale el índice
   leído, así que el shader no cambia. El quad de `test_1` usa 4 vértices y 6
   índices `uint16`.
-  Hito 8 del RHI (sub-asignación de memoria, 8a-8b hechos): decidido hacer
+  Hito 8 del RHI (sub-asignación de memoria, completo, 8a-8e): decidido hacer
   el asignador propio (sin VMA), con lista libre first-fit. `FreeListAllocator`
   (`luxel/src/free_list_allocator.*`, sin Vulkan): gestiona los rangos libres
   (`MemoryRange { offset, size }`) de UN bloque abstracto, en un `std::vector`
@@ -181,23 +181,61 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   padding de la alineación como hueco libre y evita desbordamientos;
   `free(offset, size)` busca con `lower_bound`, fusiona con los vecinos y, en
   debug, detecta doble free y rangos fuera del bloque. Consultas `capacity()`,
-  `free_size()` e `is_empty()` (un único hueco que cubre todo). Sin mutex (la
-  política de hilos se decide en 8c). Tests 6-11 en `tests/test_free`.
-- Siguiente: 8c (`VulkanMemoryBlock` con un `vk::DeviceMemory` y su
-  `FreeListAllocator`; `VulkanMemoryAllocator` con bloques por tipo de memoria
-  y bloque nuevo cuando se llena), luego migrar buffer/textura (8d) y
-  staging/frame allocator, con mapeo y asignaciones dedicadas (8e). Después, los
-  shaders propios del motor incrustados en el ejecutable (hoy los tests leen
-  los `.spv` de disco).
+  `free_size()` e `is_empty()` (un único hueco que cubre todo). Tests 6-11 en
+  `tests/test_free`.
+  8c hecho: `VulkanMemoryBlock` (`vulkan_memory_block.*`): un
+  `vk::raii::DeviceMemory` (64 MB por defecto) + su `FreeListAllocator`, tipo de
+  memoria y, si el tipo es visible y coherente, el bloque entero se mapea UNA
+  vez al crearlo (Vulkan no permite mapear dos veces la misma memoria); no
+  copiable ni movible (las reservas guardan un puntero al bloque); devuelve
+  `MemoryRange` y el destructor comprueba (assert) que no quedan reservas.
+  `VulkanMemoryAllocator` (`vulkan_memory_allocator.*`): tabla fija de
+  `ResourceKind` (Buffer/Image, por separado para esquivar
+  `bufferImageGranularity`) x `VK_MAX_MEMORY_TYPES` listas de
+  `unique_ptr<VulkanMemoryBlock>`; `allocate(requirements, properties, kind)`
+  prueba los bloques en orden (first-fit entre bloques) y, si ninguno cabe, crea
+  uno de `max(64 MB, tamaño pedido)`; lanza si no hay tipo de memoria.
+  `m_blocks` sin llaves de inicialización (con ellas el compilador pedía el tipo
+  completo del bloque en la cabecera). Cuelga de `VulkanDevice`
+  (`memory_allocator()`), declarado sobre la tabla bindless, los frames y la
+  `DeletionQueue` y bajo el `vk::Device`: el destructor del device vacía la cola
+  con el asignador vivo y los bloques mueren antes que el `vk::Device`.
+  `MemoryAllocation` es RAII y solo movible: (memoria, offset, size, puntero
+  mapeado, bloque) con campos privados y accesores, `reset()` idempotente,
+  `operator bool` explícito; se libera sola al morir porque ya conoce su bloque
+  (no hay `free` en el asignador). Trampa: `CHECK(a)` no compila con el
+  `explicit operator bool` (hay que `static_cast<bool>`).
+  8d hecho: `VulkanBuffer` y `VulkanTexture` piden su trozo (`ResourceKind::Buffer`
+  / `Image`, `eDeviceLocal`) y hacen `bindMemory(memoria, offset)`. La
+  `MemoryAllocation` ocupa el sitio del antiguo `DeviceMemory` en la lista de
+  miembros: primero muere el `VkBuffer`/`VkImage` y luego el trozo vuelve al
+  bloque, también si el constructor lanza a medias.
+  8e hecho: `VulkanStagingBuffer` y `VulkanFrameAllocator` también usan el
+  asignador (memoria visible y coherente) y escriben en el puntero mapeado de la
+  `MemoryAllocation`: el staging ya no mapea/desmapea en cada `write_data`.
+  Ningún recurso hace su propio `vkAllocateMemory`. Como los asignadores por
+  frame reservan al crear el device, un device nuevo ya tiene un bloque
+  host-visible (los tests parten de una línea base de bloques). `trim()`
+  destruye los bloques vacíos gigantes y los vacíos redundantes, conservando
+  como máximo uno vacío de tamaño estándar por bucket (seguro en cualquier
+  momento: un bloque solo está vacío si todas sus reservas se han liberado);
+  `create_buffer`/`create_texture` lo llaman tras una subida con
+  `initial_data` mayor que un bloque (el staging gigante ya ha muerto). Tests
+  17-22 de `test_deferred` (bloque, asignador, device, 5000 buffers en un solo
+  bloque, trim, subida grande).
+  Sin mutex, a propósito: el asignador no es seguro entre hilos y no tendría
+  sentido protegerlo solo a él mientras `submit_immediate` (pool y cola
+  compartidos) sea monohilo; contrato escrito en `vulkan_memory_allocator.h`
+  con el plan para cuando haya carga multihilo.
+- Siguiente: los shaders propios del motor incrustados en el ejecutable (hoy
+  los tests leen los `.spv` de disco). Pendiente del hito 8, para más
+  adelante: llamar a `trim()` también de forma periódica (p. ej. en
+  `begin_frame`) si aparecen más rutas de subida grandes, y asignaciones
+  dedicadas si hay recursos enormes de vida larga.
 - Entorno de compilación (para el asistente): desde Git Bash, cargar
   `vcvars64.bat` de VS 2026 (`C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Auxiliary\Build`)
   y `cmake --build out/build/clangcl-debug`. No hay presets de build, solo de
   configuración.
-- Sub-asignación de memoria (hito 8): hoy cada buffer y textura hace su propio
-  `vkAllocateMemory` (mínimo garantizado: 4096 asignaciones). Decidido el
-  sub-asignador propio; la reserva quedará detrás de una única función interna.
-  Cuidado pendiente: `bufferImageGranularity` entre buffers y texturas de tiling
-  óptimo que compartan bloque.
 - Hecho (ventana/bucle): `Window::wait_events()` (`WaitMessage`, bloquea hasta
   el siguiente mensaje). El bucle de la app lo llama en cada vuelta mientras la
   ventana está minimizada (`width()`/`height()` a 0) y hace `continue`; así la
