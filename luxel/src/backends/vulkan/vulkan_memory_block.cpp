@@ -1,5 +1,4 @@
 #include "vulkan_memory_block.h"
-#include "vulkan_memory_allocator.h"
 #include "vulkan_device.h"
 #include <optional>
 #include <cstdint>
@@ -31,21 +30,8 @@ namespace luxel::vulkan
 		assert(m_allocator.is_empty() && "VulkanMemoryBlock destruido con asignaciones activas");
 	}
 
-	std::optional<MemoryAllocation> VulkanMemoryBlock::allocate(uint64_t size, uint64_t alignment)
-	{
-		auto range = m_allocator.allocate(size, alignment);
-
-		if (!range) {
-			return std::nullopt;
-		}
-
-		return MemoryAllocation{
-			.memory = *m_memory,
-			.offset = range->offset,
-			.size   = range->size,
-			.mapped = m_mapped ? m_mapped + range->offset : nullptr,
-			.block  = this
-		};
+	std::optional<MemoryRange> VulkanMemoryBlock::allocate(uint64_t size, uint64_t alignment) {
+		return m_allocator.allocate(size, alignment);
 	}
 
 	void VulkanMemoryBlock::free(uint64_t offset, uint64_t size) {

@@ -617,9 +617,7 @@ static void test_memory_block()
 		CHECK(a->offset == 0 && a->size == 256);
 		CHECK(b->offset == 256 && b->size == 100);
 		CHECK(c->offset == 512 && c->size == 100);
-		CHECK(a->memory == block.memory() && b->memory == a->memory && c->memory == a->memory);
-		CHECK(a->block == &block);
-		CHECK((a->mapped != nullptr) == expect_mapped);
+		CHECK(block.memory() != vk::DeviceMemory{});   // un unico vk::DeviceMemory para todas las reservas
 
 		// Lleno: lo que queda libre es menos que el bloque entero.
 		CHECK(!block.allocate(k_block_size, 1).has_value());
@@ -646,16 +644,96 @@ static void test_memory_block()
 		CHECK(a.has_value() && b.has_value());
 		if (!a || !b) { return; }
 
-		CHECK(a->mapped == block.mapped());
-		CHECK(b->mapped - a->mapped == static_cast<std::ptrdiff_t>(b->offset - a->offset));
+		// El bloque ya no devuelve punteros: cada reserva es base + offset.
+		std::byte* pa = block.mapped() + a->offset;
+		std::byte* pb = block.mapped() + b->offset;
+		CHECK(pa == block.mapped());
+		CHECK(pb - pa == static_cast<std::ptrdiff_t>(b->offset - a->offset));
 
-		std::memset(a->mapped, 0xAA, 64);
-		std::memset(b->mapped, 0x55, 64);
-		CHECK(a->mapped[0] == std::byte{ 0xAA } && a->mapped[63] == std::byte{ 0xAA });
-		CHECK(b->mapped[0] == std::byte{ 0x55 } && b->mapped[63] == std::byte{ 0x55 });
+		std::memset(pa, 0xAA, 64);
+		std::memset(pb, 0x55, 64);
+		CHECK(pa[0] == std::byte{ 0xAA } && pa[63] == std::byte{ 0xAA });
+		CHECK(pb[0] == std::byte{ 0x55 } && pb[63] == std::byte{ 0x55 });
 
 		block.free(a->offset, a->size);
 		block.free(b->offset, b->size);
+	}
+
+	CHECK(device->ref_count() == 1);
+}
+
+// 18. VulkanMemoryAllocator aislado: reparto dentro de un bloque, buffers e
+//     imagenes en bloques distintos, bloque nuevo cuando se llena, recurso
+//     mayor que el bloque, reutilizacion tras liberar (first-fit entre
+//     bloques) y puntero mapeado en memoria visible.
+static void test_memory_allocator()
+{
+	std::cout << "[18] VulkanMemoryAllocator\n";
+	auto device = make_device();
+	auto& vk_device = *static_cast<luxel::vulkan::VulkanDevice*>(device.get());
+
+	using luxel::vulkan::ResourceKind;
+	using enum vk::MemoryPropertyFlagBits;
+	constexpr uint64_t k_block = luxel::vulkan::VulkanMemoryAllocator::k_default_block_size;
+	auto req = [](uint64_t size, uint64_t alignment) {
+		return vk::MemoryRequirements{ .size = size, .alignment = alignment, .memoryTypeBits = 0xFFFFFFFFu };
+	};
+
+	const uint32_t type = vk_device.find_memory_type(0xFFFFFFFFu, eDeviceLocal);
+	luxel::vulkan::VulkanMemoryAllocator allocator(vk_device);
+	CHECK(allocator.block_count() == 0);
+
+	// Dos reservas pequenas comparten el primer bloque.
+	auto a = allocator.allocate(req(256, 16), eDeviceLocal, ResourceKind::Buffer);
+	auto b = allocator.allocate(req(256, 16), eDeviceLocal, ResourceKind::Buffer);
+	CHECK(allocator.block_count() == 1);
+	CHECK(a.offset == 0 && b.offset == 256);
+	CHECK(a.memory == b.memory && a.block == b.block);
+
+	// Una imagen del mismo tipo de memoria va a otro bloque (granularidad).
+	auto img = allocator.allocate(req(256, 16), eDeviceLocal, ResourceKind::Image);
+	CHECK(allocator.block_count() == 2);
+	CHECK(allocator.block_count(ResourceKind::Buffer, type) == 1);
+	CHECK(allocator.block_count(ResourceKind::Image, type) == 1);
+	CHECK(img.memory != a.memory);
+
+	// Rellenamos el resto del primer bloque exactamente: sigue siendo uno.
+	auto c = allocator.allocate(req(k_block - 512, 16), eDeviceLocal, ResourceKind::Buffer);
+	CHECK(c.offset == 512 && c.memory == a.memory);
+	CHECK(allocator.block_count(ResourceKind::Buffer, type) == 1);
+
+	// Ya no cabe nada mas: aparece un segundo bloque de buffers.
+	auto d = allocator.allocate(req(16, 16), eDeviceLocal, ResourceKind::Buffer);
+	CHECK(allocator.block_count(ResourceKind::Buffer, type) == 2);
+	CHECK(d.memory != a.memory && d.offset == 0);
+
+	// Un recurso mayor que el bloque por defecto obtiene un bloque a su medida.
+	auto big = allocator.allocate(req(2 * k_block, 16), eDeviceLocal, ResourceKind::Buffer);
+	CHECK(allocator.block_count(ResourceKind::Buffer, type) == 3);
+	CHECK(big.offset == 0 && big.size == 2 * k_block);
+	CHECK(big.memory != a.memory && big.memory != d.memory);
+
+	// Tras liberar el principio del primer bloque, se reutiliza (first-fit
+	// entre bloques: el primero con hueco) y no se crea otro.
+	allocator.free(a);
+	allocator.free(b);
+	auto e = allocator.allocate(req(256, 16), eDeviceLocal, ResourceKind::Buffer);
+	CHECK(e.memory == a.memory && e.offset == 0);
+	CHECK(allocator.block_count(ResourceKind::Buffer, type) == 3);
+
+	// Memoria visible y coherente: puntero mapeado = base del bloque + offset.
+	const vk::MemoryPropertyFlags host_flags = eHostVisible | eHostCoherent;
+	auto h1 = allocator.allocate(req(64, 16), host_flags, ResourceKind::Buffer);
+	auto h2 = allocator.allocate(req(64, 16), host_flags, ResourceKind::Buffer);
+	CHECK(h1.mapped != nullptr && h2.mapped != nullptr);
+	CHECK(h2.mapped - h1.mapped == static_cast<std::ptrdiff_t>(h2.offset - h1.offset));
+	std::memset(h1.mapped, 0x11, 64);
+	std::memset(h2.mapped, 0x22, 64);
+	CHECK(h1.mapped[63] == std::byte{ 0x11 } && h2.mapped[0] == std::byte{ 0x22 });
+
+	// Se libera todo antes de que mueran los bloques (assert del destructor).
+	for (const auto& allocation : { e, c, d, big, img, h1, h2 }) {
+		allocator.free(allocation);
 	}
 
 	CHECK(device->ref_count() == 1);
@@ -693,6 +771,7 @@ int main()
 	test_texture_invalid_descriptors();
 
 	test_memory_block();
+	test_memory_allocator();
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;

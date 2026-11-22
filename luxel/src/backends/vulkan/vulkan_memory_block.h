@@ -9,7 +9,6 @@
 namespace luxel::vulkan
 {
 	class VulkanDevice;
-	struct MemoryAllocation;
 
 	class VulkanMemoryBlock
 	{
@@ -22,7 +21,7 @@ namespace luxel::vulkan
 		VulkanMemoryBlock(VulkanMemoryBlock&&) = delete;
 		VulkanMemoryBlock& operator=(VulkanMemoryBlock&&) = delete;
 
-		std::optional<MemoryAllocation> allocate(uint64_t size, uint64_t alignment);
+		std::optional<MemoryRange> allocate(uint64_t size, uint64_t alignment);
 		void free(uint64_t offset, uint64_t size);
 
 		// Accesores públicos
