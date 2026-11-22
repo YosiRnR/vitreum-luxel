@@ -26,8 +26,10 @@ namespace luxel::vulkan
 
 		// Accesores públicos
 		vk::DeviceMemory memory() const { return *m_memory; }
-		uint32_t memory_type_index() const { return m_memory_type_index; }
+		uint32_t   memory_type_index() const { return m_memory_type_index; }
 		std::byte* mapped() const { return m_mapped; }
+		uint64_t   size() const noexcept { return m_allocator.capacity(); }
+		bool       is_empty() const noexcept { return m_allocator.is_empty(); }
 
 	private:
 		vk::raii::DeviceMemory m_memory{ nullptr };

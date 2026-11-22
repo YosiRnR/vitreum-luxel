@@ -747,16 +747,113 @@ static void test_device_memory_allocator()
 	auto& vk_device = *static_cast<luxel::vulkan::VulkanDevice*>(device.get());
 	auto& allocator = vk_device.memory_allocator();
 
-	CHECK(allocator.block_count() == 0);
+	// Los asignadores por frame (host visible) ya han reservado su memoria al
+	// crear el device, asi que no parte de cero: hay al menos un bloque.
+	const size_t initial_blocks = allocator.block_count();
+	CHECK(initial_blocks >= 1);
 
 	const vk::MemoryRequirements req{ .size = 1024, .alignment = 16, .memoryTypeBits = 0xFFFFFFFFu };
 	auto a = allocator.allocate(req, vk::MemoryPropertyFlagBits::eDeviceLocal, luxel::vulkan::ResourceKind::Buffer);
 	CHECK(static_cast<bool>(a));   // operator bool es explicit: no convierte solo al pasarlo a check()
-	CHECK(allocator.block_count() == 1);
+	const uint32_t type = vk_device.find_memory_type(0xFFFFFFFFu, vk::MemoryPropertyFlagBits::eDeviceLocal);
+	CHECK(allocator.block_count(luxel::vulkan::ResourceKind::Buffer, type) >= 1);
+	CHECK(allocator.block_count() >= initial_blocks);
 	a.reset();
 	CHECK(!static_cast<bool>(a));
 
 	// Sin asignaciones vivas el device se destruye al soltar el ultimo Ref.
+	CHECK(device->ref_count() == 1);
+}
+
+// 20. Muchos buffers pequenos comparten bloques: antes de la sub-asignacion
+//     cada buffer hacia su propio vkAllocateMemory y 5000 buffers superaban el
+//     minimo garantizado de 4096 asignaciones (maxMemoryAllocationCount). Ahora
+//     caben en un unico bloque, y al soltarlos todos el device muere sin que
+//     salte el assert de "bloque destruido con asignaciones activas".
+static void test_many_small_buffers()
+{
+	std::cout << "[20] 5000 buffers pequenos en un solo bloque\n";
+	auto device = make_device();
+	auto& vk_device = *static_cast<luxel::vulkan::VulkanDevice*>(device.get());
+	auto& allocator = vk_device.memory_allocator();
+
+	// Los asignadores por frame ya tienen su bloque host visible desde la
+	// creacion del device: contamos solo los bloques que aparezcan despues.
+	const size_t initial_blocks = allocator.block_count();
+
+	constexpr size_t k_count = 5000;
+	std::vector<luxel::Ref<luxel::Buffer>> buffers;
+	buffers.reserve(k_count);
+
+	// Sin initial_data: la subida por staging espera a la GPU en cada buffer.
+	for (size_t i = 0; i < k_count; ++i) {
+		buffers.push_back(device->create_buffer({ .size = 64, .usage = luxel::BufferUsage::Index }));
+	}
+
+	CHECK(buffers.size() == k_count);
+	// 5000 buffers, como mucho un vkAllocateMemory nuevo (cero si comparten
+	// bloque con los de los frames, p. ej. en una GPU integrada).
+	const size_t blocks_after_creation = allocator.block_count();
+	CHECK(blocks_after_creation - initial_blocks <= 1);
+
+	// Todos siguen siendo buffers validos y distintos.
+	CHECK(buffers.front()->size() == 64 && buffers.back()->size() == 64);
+	CHECK(buffers.front().get() != buffers.back().get());
+
+	// Soltarlos encola 5000 destrucciones; el device las vacia al morir.
+	// (El vector va declarado despues del device: muere antes.)
+	buffers.clear();
+	CHECK(allocator.block_count() == blocks_after_creation);   // los bloques de tamano normal no se devuelven a Vulkan
+}
+
+// 21. VulkanMemoryAllocator::trim: no toca los bloques con reservas vivas;
+//     cuando todo se libera, destruye los bloques gigantes y los vacios
+//     redundantes, y conserva un unico bloque vacio de tamano estandar para
+//     reutilizarlo.
+static void test_memory_allocator_trim()
+{
+	std::cout << "[21] VulkanMemoryAllocator::trim\n";
+	auto device = make_device();
+	auto& vk_device = *static_cast<luxel::vulkan::VulkanDevice*>(device.get());
+
+	using luxel::vulkan::ResourceKind;
+	constexpr uint64_t k_block = luxel::vulkan::VulkanMemoryAllocator::k_default_block_size;
+	auto req = [](uint64_t size) {
+		return vk::MemoryRequirements{ .size = size, .alignment = 16, .memoryTypeBits = 0xFFFFFFFFu };
+	};
+	const auto flags = vk::MemoryPropertyFlagBits::eDeviceLocal;
+	const uint32_t type = vk_device.find_memory_type(0xFFFFFFFFu, flags);
+
+	luxel::vulkan::VulkanMemoryAllocator allocator(vk_device);
+
+	// Dos bloques estandar llenos y uno gigante.
+	auto a   = allocator.allocate(req(k_block), flags, ResourceKind::Buffer);
+	auto b   = allocator.allocate(req(k_block), flags, ResourceKind::Buffer);
+	auto big = allocator.allocate(req(2 * k_block), flags, ResourceKind::Buffer);
+	CHECK(allocator.block_count(ResourceKind::Buffer, type) == 3);
+
+	// Con todo en uso, trim no destruye nada.
+	allocator.trim();
+	CHECK(allocator.block_count(ResourceKind::Buffer, type) == 3);
+
+	// Se libera solo el gigante: desaparece; los estandar llenos se quedan.
+	big.reset();
+	allocator.trim();
+	CHECK(allocator.block_count(ResourceKind::Buffer, type) == 2);
+
+	// Se libera todo: sobra un bloque estandar vacio, se conserva uno.
+	a.reset();
+	b.reset();
+	allocator.trim();
+	CHECK(allocator.block_count(ResourceKind::Buffer, type) == 1);
+
+	// Trim es idempotente y el bloque conservado se reutiliza sin crear otro.
+	allocator.trim();
+	CHECK(allocator.block_count(ResourceKind::Buffer, type) == 1);
+	auto c = allocator.allocate(req(256), flags, ResourceKind::Buffer);
+	CHECK(allocator.block_count(ResourceKind::Buffer, type) == 1);
+	CHECK(c.offset() == 0);
+
 	CHECK(device->ref_count() == 1);
 }
 
@@ -794,6 +891,8 @@ int main()
 	test_memory_block();
 	test_memory_allocator();
 	test_device_memory_allocator();
+	test_many_small_buffers();
+	test_memory_allocator_trim();
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;

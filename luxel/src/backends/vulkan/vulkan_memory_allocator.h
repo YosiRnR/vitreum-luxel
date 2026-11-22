@@ -105,6 +105,10 @@ namespace luxel::vulkan
 
 		MemoryAllocation allocate(const vk::MemoryRequirements& requirements, vk::MemoryPropertyFlags properties, ResourceKind kind);
 
+		// Libera los bloques vacios sobrantes (bloques gigantes o vacios redundantes),
+		// conservando como maximo un bloque vacio de tamano estandar por bucket.
+		void trim();
+
 		[[nodiscard]] size_t block_count() const noexcept;
 		[[nodiscard]] size_t block_count(ResourceKind kind, uint32_t memory_type_index) const noexcept;
 

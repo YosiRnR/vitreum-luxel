@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <memory>
 #include <cassert>
+#include <vector>
 
 namespace luxel::vulkan
 {
@@ -67,6 +68,27 @@ namespace luxel::vulkan
 
 		bucket.push_back(std::move(new_block));
 		return alloc;
+	}
+
+	void VulkanMemoryAllocator::trim()
+	{
+		for (auto& bucket : m_blocks)
+		{
+			bool kept_standard_empty = false;
+
+			std::erase_if(bucket, [&](const std::unique_ptr<VulkanMemoryBlock>& block) {
+				if (!block->is_empty()) {
+					return false;
+				}
+
+				if (!kept_standard_empty && block->size() <= k_default_block_size) {
+					kept_standard_empty = true;
+					return false;
+				}
+
+				return true;
+			});
+		}
 	}
 
 	size_t VulkanMemoryAllocator::block_count() const noexcept
