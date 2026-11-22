@@ -37,15 +37,8 @@ namespace luxel::vulkan
 		vk::MemoryRequirements mem_requirements = m_image.getMemoryRequirements();
 		vk::MemoryPropertyFlags properties      = vk::MemoryPropertyFlagBits::eDeviceLocal; // Memoria de GPU
 
-		uint32_t memory_type_index = m_ref_device->find_memory_type(mem_requirements.memoryTypeBits, properties);
-
-		vk::MemoryAllocateInfo alloc_info{
-			.allocationSize  = mem_requirements.size,
-			.memoryTypeIndex = memory_type_index
-		};
-		m_image_memory = vk::raii::DeviceMemory(m_ref_device->logical_device(), alloc_info);
-
-		m_image.bindMemory(*m_image_memory, 0);
+		m_image_memory = m_ref_device->memory_allocator().allocate(mem_requirements, properties, ResourceKind::Image);
+		m_image.bindMemory(m_image_memory.memory(), m_image_memory.offset());
 
 		// ImageView
 		vk::ImageViewCreateInfo view_info{

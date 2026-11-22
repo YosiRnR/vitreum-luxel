@@ -4,6 +4,7 @@
 #include <luxel/texture.h>
 #include "vulkan_common.h"
 #include "vulkan_device.h"
+#include "vulkan_memory_allocator.h"
 #include <cstdint>
 #include <cstddef>
 #include <span>
@@ -28,11 +29,11 @@ namespace luxel::vulkan
 		VulkanTexture(const Ref<VulkanDevice>& vk_device, const TextureDescriptor& texture_desc);
 
 		// Declarados en orden inverso de destrucción
-		Ref<VulkanDevice> m_ref_device;
-		vk::raii::DeviceMemory m_image_memory{ nullptr };
-		vk::raii::Image m_image{ nullptr };
-		vk::raii::ImageView m_view{ nullptr };
-		uint32_t m_slot_index{};
+		Ref<VulkanDevice>    m_ref_device;
+		MemoryAllocation     m_image_memory{};
+		vk::raii::Image      m_image{ nullptr };
+		vk::raii::ImageView  m_view{ nullptr };
+		uint32_t             m_slot_index{};
 		VulkanBindlessTable* m_bindless_table{ nullptr };
 
 		void upload(std::span<const std::byte> data);

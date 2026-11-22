@@ -4,6 +4,7 @@
 #include <luxel/buffer.h>
 #include "vulkan_common.h"
 #include "vulkan_device.h"
+#include "vulkan_memory_allocator.h"
 #include <cstdint>
 
 namespace luxel::vulkan
@@ -30,7 +31,7 @@ namespace luxel::vulkan
 
 		// Declarados en orden inverso de destrucción
 		Ref<VulkanDevice> m_ref_device;
-		vk::raii::DeviceMemory m_buffer_memory{ nullptr };
+		MemoryAllocation m_buffer_memory{};
 		vk::raii::Buffer m_buffer{ nullptr };
 		uint32_t m_slot_index{};
 		VulkanBindlessTable* m_bindless_table{ nullptr };
