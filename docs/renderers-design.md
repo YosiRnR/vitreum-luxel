@@ -159,8 +159,10 @@ La UI se divide en dos partes que no conviene mezclar:
     `begin`/`draw_quad`/`end`. Salió completo de una vez: color, textura,
     sampler, UVs y rotación. `test_1` dibuja rectángulos de color, un sprite
     girando y un rectángulo semitransparente en un solo draw.
-  - R2c: probar textura, UVs y rotación a fondo: ~10.000 quads en `test_1`,
-    recortes de UV (un sprite de una hoja de sprites), sampler `Nearest`.
+  - R2c (hecho): pruebas a fondo en `test_1`: 10.000 quads girando en un
+    lote (0,87 ms de CPU en Debug), hoja de sprites animada recortada por UV y
+    comparación `Nearest`/`Linear` (el borde de 1 píxel entre celdas evita el
+    "bleeding" del filtrado lineal). Recursos de los tests en `tests/assets/`.
   - R2d: orden por capa y lotes partidos si no caben; test sin GPU de la parte
     de CPU.
 - **R3. Texto**: primero fuente bitmap (imagen con los caracteres en rejilla);

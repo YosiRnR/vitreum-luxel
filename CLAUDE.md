@@ -327,6 +327,19 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   rectángulo semitransparente en un solo draw, sin avisos de validación.
   Textura, UV y rotación ya están implementadas; R2c queda en probarlas a
   fondo (10.000 quads, recortes de UV, sampler `Nearest`).
+  R2c hecho: `tests/assets/` para los recursos de los tests;
+  `tests/test_1/CMakeLists.txt` define `LUXEL_TEST_ASSETS_DIR` (ruta absoluta,
+  `stbi_load(LUXEL_TEST_ASSETS_DIR "/iriaBase01.png", ...)`); si falta el PNG,
+  el sprite sale blanco. `test_1` tiene una escena por ventana (`SceneKind`):
+  la principal, estrés de 100x100 = 10.000 quads girando (1 de cada 7 con la
+  textura del PNG, en el mismo lote) con el tiempo de CPU del lote y los FPS en
+  el título; la segunda, una hoja de sprites generada (4x4 celdas de 8x8) con
+  la hoja entera, una celda animada recortada por UV con `Nearest` y la misma
+  con `Linear`. Medido en Debug: 10.000 quads = 0,87 ms de CPU por lote
+  (640 KB del asignador por frame), 1 draw, a tope de vsync, sin avisos.
+  Cada `begin_frame` de cada swapchain avanza el frame del device y resetea
+  su asignador, así que cada ventana tiene su MB. Las animaciones usan tiempo
+  real (`steady_clock`), no un incremento por vuelta.
   Pendiente del hito 8, para más
   adelante: llamar a `trim()` también de forma periódica (p. ej. en
   `begin_frame`) si aparecen más rutas de subida grandes, y asignaciones
