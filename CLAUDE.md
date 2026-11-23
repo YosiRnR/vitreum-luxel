@@ -273,7 +273,21 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   PNG). Premultiplicado exige premultiplicar la textura al cargarla (los PNG no
   lo están). Test 23 de `test_deferred`: un pipeline por modo, sin avisos de
   validación.
-- Siguiente: R1c de `docs/renderers-design.md`, convención de Y de `Camera2D`.
+- Hecho (R1c, convención de ejes): mundo con +Y arriba y ángulo positivo =
+  antihorario (`Camera2D`/`Camera3D`); NDC de luxel con +Y arriba (contrato
+  como D3D12/GL/Metal): el backend Vulkan lo cumple con viewport de altura
+  negativa en `begin_rendering` (`y = alto`, `height = -alto`; el scissor no
+  cambia); así `math` no sabe de Vulkan y `screen_to_world` (escrito para NDC
+  +Y arriba) pasa a ser correcto. UV con (0,0) arriba a la izquierda (primera
+  fila en memoria, como D3D/Vulkan/Metal): `test_1` sin `stbi_set_flip`, `v = 0`
+  en los vértices de arriba. La UI tendrá su propia proyección en píxeles
+  ((0,0) arriba a la izquierda, +Y abajo). Ojo para R5: el viewport invertido
+  cambia el sentido de giro de los triángulos (hoy `cullMode = eNone`; fijar
+  `frontFace` pensando en el NDC ya corregido) y `orthographic` usa Z en
+  [-1, 1] (OpenGL) mientras Vulkan/D3D usan [0, 1]. `tests/test_cameras`
+  (caja negra, solo API pública, sin GPU): esquinas y centro en ambos sentidos,
+  +Y arriba, posición, zoom, ida y vuelta con rotación y `rotateZ` antihorario.
+- Siguiente: R2 de `docs/renderers-design.md`, `Renderer2D` con batching.
   Pendiente del hito 8, para más
   adelante: llamar a `trim()` también de forma periódica (p. ej. en
   `begin_frame`) si aparecen más rutas de subida grandes, y asignaciones

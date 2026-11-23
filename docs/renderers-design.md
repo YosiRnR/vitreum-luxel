@@ -107,8 +107,11 @@ La UI se divide en dos partes que no conviene mezclar:
     (privados) y de cada test.
   - R1b (hecho): blending configurable en `GraphicsPipelineDescriptor` con
     `BlendMode` (`Opaque`, `Alpha`, `PremultipliedAlpha`, `Additive`).
-  - R1c: decidir la convención de Y de `Camera2D` (hoy, con el `orthographic`
-    estilo OpenGL, +Y del mundo va hacia abajo en pantalla en Vulkan).
+  - R1c (hecho): convención de ejes. Mundo +Y arriba (ángulo positivo =
+    antihorario); NDC de luxel +Y arriba, que Vulkan cumple con viewport de
+    altura negativa; UV (0,0) arriba a la izquierda; la UI usará su propia
+    proyección en píxeles ((0,0) arriba a la izquierda, +Y abajo). Pendiente
+    para R5: `frontFace` con el viewport invertido y rango de Z [0, 1].
 - **R2. Renderer2D con batching**: quads con color, textura, rotación y capa;
   un draw por lote. Primer resultado visible; usa asignador por frame,
   bindless y cámara.

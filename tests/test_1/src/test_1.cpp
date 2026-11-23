@@ -142,9 +142,9 @@ static Scene create_scene(luxel::Device& device, luxel::Format color_format)
 	int img_height{};
 	int img_channels{};
 
-	stbi_set_flip_vertically_on_load(1);
-	//stbi_uc* data = stbi_load("D:/IriaGameResources/iriaBase01.png", &img_width, &img_height, &img_channels, 4);
-	stbi_uc* data = stbi_load("D:/IriaGameResources/IriaGame/assets/sprites/Iria-idle-trimmed.png", &img_width, &img_height, &img_channels, 4);
+	stbi_set_flip_vertically_on_load(0); // No volteamos verticalmente la imagen
+	stbi_uc* data = stbi_load("D:/IriaGameResources/iriaBase01.png", &img_width, &img_height, &img_channels, 4);
+	//stbi_uc* data = stbi_load("D:/IriaGameResources/IriaGame/assets/sprites/Iria-idle-trimmed.png", &img_width, &img_height, &img_channels, 4);
 	if (!data){
 		return{};
 	}
@@ -169,10 +169,10 @@ static Scene create_scene(luxel::Device& device, luxel::Format color_format)
 
 	const std::array<float, 16> vertices{
 		// posición      // UV
-		-0.5f, -0.5f,    0.0f, 0.0f, // abajo izquierda
-		 0.5f, -0.5f,    1.0f, 0.0f, // abajo derecha
-		 0.5f,  0.5f,    1.0f, 1.0f, // arriba derecha
-		-0.5f,  0.5f,    0.0f, 1.0f  // arriba izquierda
+		-0.5f, -0.5f,    0.0f, 1.0f, // abajo izquierda
+		 0.5f, -0.5f,    1.0f, 1.0f, // abajo derecha
+		 0.5f,  0.5f,    1.0f, 0.0f, // arriba derecha
+		-0.5f,  0.5f,    0.0f, 0.0f  // arriba izquierda
 	};
 	scene.vertex_buffer = device.create_buffer(luxel::BufferDescriptor::from_data(vertices, luxel::BufferUsage::Storage));
 

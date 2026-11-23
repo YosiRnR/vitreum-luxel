@@ -67,9 +67,9 @@ namespace luxel::vulkan
 			0,
 			vk::Viewport{
 				.x = 0.0f,
-				.y = 0.0f,
+				.y = static_cast<float>(m_extent.height),
 				.width  = static_cast<float>(m_extent.width),
-				.height = static_cast<float>(m_extent.height),
+				.height = -static_cast<float>(m_extent.height), // La Y del mundo crece hacía arriba
 				.minDepth = 0.0f,
 				.maxDepth = 1.0f
 			}
