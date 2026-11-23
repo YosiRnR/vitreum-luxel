@@ -81,14 +81,12 @@ static std::vector<std::byte> make_checkerboard(uint32_t width, uint32_t height,
 	return pixels;
 }
 
-// Una ventana con su swapchain. El orden de los miembros importa: se destruyen
-// en orden inverso a la declaración, así la swapchain muere antes que la ventana
-// de la que depende (su surface se creó a partir del HWND).
 // Qué se dibuja en cada ventana.
 enum class SceneKind
 {
 	Stress,        // 100x100 quads girando: mide el coste en CPU de un lote grande
-	SpriteSheet    // hoja de sprites: recortes de UV, animación y Nearest vs Linear
+	SpriteSheet,   // hoja de sprites generada: recortes de UV, animación y Nearest vs Linear
+	Iria           // fondo + hoja de sprites de Iria: correr, idle y saltar
 };
 
 // Medidas para el título de la ventana de estrés (se promedian y se muestran
@@ -100,6 +98,9 @@ struct FrameStats
 	uint32_t frames{ 0 };
 };
 
+// Una ventana con su swapchain. El orden de los miembros importa: se destruyen
+// en orden inverso a la declaración, así la swapchain muere antes que la ventana
+// de la que depende (su surface se creó a partir del HWND).
 struct RenderWindow
 {
 	vitreum::Window window{};
@@ -122,7 +123,40 @@ struct Scene
 
 	luxel::Ref<luxel::Texture> atlas;           // hoja de sprites generada a mano (ver make_sprite_sheet)
 	luxel::Ref<luxel::Sampler> nearest_sampler; // para pixel art: sin filtrar, píxeles nítidos
+
+	luxel::Ref<luxel::Texture> iria_sheet;      // tests/assets/Iria-sprite-sheet.png (ver k_iria_*)
+	luxel::Ref<luxel::Texture> background;      // tests/assets/forest_00001_.png
+	float background_aspect{ 1.0f };
 };
+
+// Hoja de sprites de Iria: 1536x2048, rejilla de 6 columnas x 8 filas de
+// celdas de 256x256. Los fotogramas se numeran por filas desde arriba a la
+// izquierda (la celda n está en la columna n % 6 y la fila n / 6). Cada
+// animación es un rango de celdas consecutivas. Las 2 últimas celdas (46 y 47)
+// están vacías. Iria corre mirando a la DERECHA y tiene los pies casi en el
+// borde de abajo de cada celda: el quad se apoya en el suelo por su lado de abajo.
+constexpr uint32_t k_iria_columns = 6;
+constexpr uint32_t k_iria_rows    = 8;
+
+struct SpriteAnimation
+{
+	uint32_t first_cell;   // primera celda de la hoja
+	uint32_t frame_count;  // cuántas celdas seguidas
+	float fps;             // fotogramas por segundo
+};
+
+constexpr SpriteAnimation k_iria_run { .first_cell =  0, .frame_count = 21, .fps = 24.0f };
+constexpr SpriteAnimation k_iria_idle{ .first_cell = 21, .frame_count = 13, .fps = 10.0f };
+constexpr SpriteAnimation k_iria_jump{ .first_cell = 34, .frame_count = 12, .fps = 10.0f };
+
+// Celda que toca mostrar de una animación tras "seconds" segundos reproduciéndola.
+// loop = false: se queda en el último fotograma al terminar.
+static uint32_t animation_cell(const SpriteAnimation& anim, float seconds, bool loop = true)
+{
+	uint32_t frame = static_cast<uint32_t>(seconds * anim.fps);
+	frame = loop ? frame % anim.frame_count : std::min(frame, anim.frame_count - 1);
+	return anim.first_cell + frame;
+}
 
 // Hoja de sprites de prueba: 4x4 celdas de 8x8 píxeles (textura de 32x32).
 // Cada celda es un "fotograma" de una animación: un fondo de color propio con
@@ -170,15 +204,56 @@ static std::vector<std::byte> make_sprite_sheet()
 	return pixels;
 }
 
-// UV de la celda n de la hoja: (columna, fila) -> rectángulo [uv_min, uv_max].
-// Es el "recorte" de la textura que se pasa en el Quad.
-static void sprite_sheet_uv(uint32_t cell, luxel::math::Vector2f& uv_min, luxel::math::Vector2f& uv_max)
+// UV de la celda n de una hoja de columns x rows celdas iguales:
+// (columna, fila) -> rectángulo [uv_min, uv_max]. Es el "recorte" de la
+// textura que se pasa en el Quad. Sirve para cualquier rejilla, cuadrada o no.
+static void sprite_sheet_uv(uint32_t cell, uint32_t columns, uint32_t rows,
+                            luxel::math::Vector2f& uv_min, luxel::math::Vector2f& uv_max)
 {
-	const float step = 1.0f / static_cast<float>(k_sheet_cells_per_row);
-	const float col  = static_cast<float>(cell % k_sheet_cells_per_row);
-	const float row  = static_cast<float>(cell / k_sheet_cells_per_row);
-	uv_min = { col * step, row * step };
-	uv_max = { (col + 1.0f) * step, (row + 1.0f) * step };
+	const float step_u = 1.0f / static_cast<float>(columns);
+	const float step_v = 1.0f / static_cast<float>(rows);
+	const float col    = static_cast<float>(cell % columns);
+	const float row    = static_cast<float>(cell / columns);
+	uv_min = { col * step_u, row * step_v };
+	uv_max = { (col + 1.0f) * step_u, (row + 1.0f) * step_v };
+}
+
+// Carga un PNG de tests/assets como textura RGBA sRGB. Si no existe, avisa y
+// devuelve un Ref vacío (el Quad con texture = nullptr se dibuja blanco).
+// aspect (opcional) recibe ancho / alto de la imagen.
+static luxel::Ref<luxel::Texture> load_png_texture(luxel::Device& device, const std::string& file_name,
+                                                   float* aspect = nullptr)
+{
+	// LUXEL_TEST_ASSETS_DIR la define tests/test_1/CMakeLists.txt (ruta absoluta a tests/assets).
+	const std::string path = std::string(LUXEL_TEST_ASSETS_DIR) + "/" + file_name;
+
+	int img_width{};
+	int img_height{};
+	int img_channels{};
+	stbi_set_flip_vertically_on_load(0); // No volteamos: la primera fila es la de arriba, como las UV de luxel
+	stbi_uc* data = stbi_load(path.c_str(), &img_width, &img_height, &img_channels, 4);   // 4 = forzar RGBA
+	if (!data) {
+		std::cout << std::format("No se encontró {}: se dibujará en blanco\n", path);
+		return {};
+	}
+
+	const size_t byte_count = static_cast<size_t>(img_width) * static_cast<size_t>(img_height) * 4;
+	auto texture = device.create_texture({
+		.width        = static_cast<uint32_t>(img_width),
+		.height       = static_cast<uint32_t>(img_height),
+		.format       = luxel::Format::R8G8B8A8_SRGB,
+		.usage        = luxel::TextureUsage::Sampled,
+		.mip_levels   = 1,
+		.initial_data = { reinterpret_cast<const std::byte*>(data), byte_count }
+	});
+	// create_texture ya ha subido los píxeles (submit_immediate espera a la GPU):
+	// la memoria de stb se puede liberar en cuanto vuelve.
+	stbi_image_free(data);
+
+	if (aspect) {
+		*aspect = static_cast<float>(img_width) / static_cast<float>(img_height);
+	}
+	return texture;
 }
 
 // vitreum::Window no se puede mover, por eso las ventanas viven en unique_ptr.
@@ -229,35 +304,10 @@ static Scene create_scene(luxel::Device& device)
 	//constexpr uint32_t width  = 256;
 	//constexpr uint32_t height = 256;
 	//auto pixels = make_checkerboard(width, height, 32);
-	int img_width{};
-	int img_height{};
-	int img_channels{};
 
-	stbi_set_flip_vertically_on_load(0); // No volteamos verticalmente la imagen
-	// LUXEL_TEST_ASSETS_DIR la define tests/test_1/CMakeLists.txt (ruta absoluta a tests/assets).
-	stbi_uc* data = stbi_load(LUXEL_TEST_ASSETS_DIR "/iriaBase01.png", &img_width, &img_height, &img_channels, 4);
-	if (!data){
-		std::cout << "No se encontró tests/assets/iriaBase01.png: el sprite se dibujará como un cuadrado blanco\n";
-		return scene;
-	}
-	const size_t byte_count = static_cast<size_t>(img_width) * static_cast<size_t>(img_height) * 4;
-	std::span<const std::byte> pixels{ reinterpret_cast<const std::byte*>(data), byte_count };
-
-	const uint32_t width  = img_width;
-	const uint32_t height = img_height;
-
-	scene.texture = device.create_texture({
-		.width        = width,
-		.height       = height,
-		.format       = luxel::Format::R8G8B8A8_SRGB,
-		.usage        = luxel::TextureUsage::Sampled,
-		.mip_levels   = 1,
-		.initial_data = pixels
-	});
-
-	stbi_image_free(data);
-
-	scene.texture_aspect = static_cast<float>(width) / static_cast<float>(height);
+	scene.texture    = load_png_texture(device, "iriaBase01.png", &scene.texture_aspect);
+	scene.iria_sheet = load_png_texture(device, "Iria-sprite-sheet.png");
+	scene.background = load_png_texture(device, "forest_00001_.png", &scene.background_aspect);
 
 	return scene;
 }
@@ -341,7 +391,7 @@ static void draw_sprite_sheet_scene(luxel::Renderer2D& r2d, const Scene& scene, 
 
 	luxel::math::Vector2f uv_min{};
 	luxel::math::Vector2f uv_max{};
-	sprite_sheet_uv(frame_index, uv_min, uv_max);
+	sprite_sheet_uv(frame_index, k_sheet_cells_per_row, k_sheet_cells_per_row, uv_min, uv_max);
 
 	// La ventana de 800x600 mide 2 * 4/3 = 2.67 unidades de ancho (x de -1.33 a 1.33).
 	const luxel::math::Vector2f size{ 0.7f, 0.7f };
@@ -374,6 +424,84 @@ static void draw_sprite_sheet_scene(luxel::Renderer2D& r2d, const Scene& scene, 
 		.size     = { 0.8f * scene.texture_aspect, 0.8f },
 		.rotation = time,
 		.texture  = scene.texture.get()   // nullptr si no se cargó el PNG => cuadrado blanco
+	});
+}
+
+// Iria en el bosque. El fondo cubre la vista y Iria repite un ciclo:
+//   1) entra corriendo desde fuera por la izquierda hasta el centro,
+//   2) se para (idle),
+//   3) salta,
+//   4) sale corriendo por la derecha.
+// view_width: ancho visible en unidades del mundo (2 * aspecto de la ventana).
+static void draw_iria_scene(luxel::Renderer2D& r2d, const Scene& scene, float time, float view_width)
+{
+	// --- Fondo ---------------------------------------------------------------
+	// "Cover": que tape toda la vista sin deformarse. Alto 2 (lo que mide la
+	// cámara); si la ventana es más ancha que la imagen, se agranda para cubrir
+	// también el ancho (y se recorta arriba y abajo).
+	const float bg_height = std::max(2.0f, view_width / scene.background_aspect);
+	r2d.draw_quad({
+		.position = { 0.0f, 0.0f },
+		.size     = { bg_height * scene.background_aspect, bg_height },
+		.texture  = scene.background.get(),
+		.layer    = -1   // todavía no se usa (R2d): hoy manda el orden de envío, y el fondo va primero
+	});
+
+	// --- Ciclo de Iria ---------------------------------------------------------
+	constexpr float run_in_time  = 3.0f;
+	constexpr float idle_time    = 3.0f;
+	const     float jump_time    = static_cast<float>(k_iria_jump.frame_count) / k_iria_jump.fps;   // 1.2 s
+	constexpr float run_out_time = 3.0f;
+	const     float cycle_time   = run_in_time + idle_time + jump_time + run_out_time;
+
+	constexpr float sprite_size = 0.9f;    // la celda es cuadrada (256x256): el quad también
+	constexpr float ground_y    = -0.72f;  // altura de los pies (a ojo, sobre el camino del bosque)
+	const     float offscreen_x = view_width * 0.5f + sprite_size * 0.5f;   // justo fuera de la vista
+
+	float t = std::fmod(time, cycle_time);   // segundos dentro del ciclo actual
+	uint32_t cell = 0;
+	float x = 0.0f;
+	float jump_height = 0.0f;
+
+	if (t < run_in_time) {
+		cell = animation_cell(k_iria_run, t);
+		x = -offscreen_x + offscreen_x * (t / run_in_time);   // de -offscreen_x a 0
+	}
+	else if ((t -= run_in_time) < idle_time) {
+		cell = animation_cell(k_iria_idle, t);
+	}
+	else if ((t -= idle_time) < jump_time) {
+		cell = animation_cell(k_iria_jump, t, false);
+		// En la hoja, el salto es: agacharse (celdas 34-35), en el aire (36-39),
+		// aterrizar (40-41) y erguirse (42-45). Los dibujos no suben dentro de
+		// su celda, así que la altura la ponemos nosotros: un arco (media onda
+		// de seno) mientras está en el aire, de 0.2 s a 0.6 s del salto.
+		constexpr float air_start = 0.2f;
+		constexpr float air_time  = 0.4f;
+		if (t > air_start && t < air_start + air_time) {
+			jump_height = 0.35f * std::sin(3.14159265f * (t - air_start) / air_time);
+		}
+	}
+	else {
+		t -= jump_time;
+		cell = animation_cell(k_iria_run, t);
+		x = offscreen_x * (t / run_out_time);   // de 0 a offscreen_x
+	}
+
+	luxel::math::Vector2f uv_min{};
+	luxel::math::Vector2f uv_max{};
+	sprite_sheet_uv(cell, k_iria_columns, k_iria_rows, uv_min, uv_max);
+	// Para que mirase a la IZQUIERDA bastaría con intercambiar uv_min.x y
+	// uv_max.x: la textura se lee al revés en horizontal (espejo gratis).
+
+	r2d.draw_quad({
+		// position es el CENTRO: para apoyar los pies en ground_y se sube medio quad.
+		.position = { x, ground_y + sprite_size * 0.5f + jump_height },
+		.size     = { sprite_size, sprite_size },
+		.texture  = scene.iria_sheet.get(),
+		.uv_min   = uv_min,
+		.uv_max   = uv_max,
+		.layer    = 0
 	});
 }
 
@@ -427,6 +555,7 @@ static void render_window_frame(luxel::Device& device, luxel::Renderer2D& r2d, R
 	{
 	case SceneKind::Stress:      draw_stress_scene(r2d, scene, time);       break;
 	case SceneKind::SpriteSheet: draw_sprite_sheet_scene(r2d, scene, time); break;
+	case SceneKind::Iria:        draw_iria_scene(r2d, scene, time, 2.0f * aspect); break;
 	}
 
 	r2d.end();
@@ -456,6 +585,7 @@ int main(int argc, char** argv)
 	std::vector<std::unique_ptr<RenderWindow>> windows;
 	windows.push_back(make_render_window(*render_device, "Vitreum Window",       { 1920, 1080 }, { 0.05f, 0.05f, 0.08f, 1.0f }, true,  SceneKind::Stress));
 	windows.push_back(make_render_window(*render_device, "Second Vitreum Window", {  800,  600 }, { 0.15f, 0.15f, 0.20f, 1.0f }, false, SceneKind::SpriteSheet));
+	windows.push_back(make_render_window(*render_device, "Iria",                  { 1280,  720 }, { 0.0f,  0.0f,  0.0f,  1.0f }, false, SceneKind::Iria));
 
 	const auto color_format = windows.front()->swapchain->color_format();
 	const auto extent       = windows.front()->swapchain->extent();
