@@ -17,6 +17,11 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
 - Sin librerías de terceros para ventana, input, UI ni matemáticas
   (nada de GLFW, SDL, ImGui o GLM). Permitido: Win32, SDK de Vulkan
   (loader y vulkan-hpp RAII), OpenGL con GLAD, WASAPI.
+  Excepción razonada: `stb_image.h` para decodificar imágenes (hoy en
+  `tests/test_1/src`; si lo usa el motor irá a una carpeta `third_party/`).
+  Hacerlo a mano (PNG + inflate/zlib) queda como posible hito de aprendizaje,
+  detrás de una función tipo `load_image(path)`. El núcleo de luxel no lee
+  ficheros: recibe bytes ya cargados.
 - C++20 en Windows 11. Solo puedo probar en Windows, pero el código de
   plataforma va detrás de interfaces (pimpl) para poder portarlo.
 - Namespaces: `vitreum` (plataforma/ventana), `luxel` (render).
@@ -227,6 +232,20 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   sentido protegerlo solo a él mientras `submit_immediate` (pool y cola
   compartidos) sea monohilo; contrato escrito en `vulkan_memory_allocator.h`
   con el plan para cuando haya carga multihilo.
+- Hecho (cámaras): `Camera2D` y `Camera3D` en `luxel/include/luxel/cameras.h`
+  (pública; implementación en `luxel/src/cameras.cpp`, incluida desde
+  `luxel.h`). Son solo matrices (posición, rotación en radianes, zoom y
+  proyección, `view_proj_matrix()`): cámara = concepto de render. El movimiento
+  con teclado salió de `Camera3D` a `FlyCameraController`
+  (`tests/test_1/src/fly_camera_controller.h`, lógica de juego que solo usa la
+  API pública de la cámara; se mudará a una capa de motor cuando exista).
+  `test_1` usa una `Camera2D` por ventana de 2 unidades de alto y
+  `2 * aspecto` de ancho (se actualiza cada frame con el extent de la
+  swapchain) y pasa `view_proj * rotateZ(angle)` al shader: el quad es cuadrado
+  en cualquier ventana. No hizo falta tocar los shaders (el VS ya multiplica
+  por la matriz que reciba). Con `orthographic` tipo OpenGL, +Y del mundo va
+  hacia abajo en pantalla (Vulkan); decidir la convención de Y de la cámara 2D
+  antes de usarla en serio.
 - Siguiente: los shaders propios del motor incrustados en el ejecutable (hoy
   los tests leen los `.spv` de disco). Pendiente del hito 8, para más
   adelante: llamar a `trim()` también de forma periódica (p. ej. en

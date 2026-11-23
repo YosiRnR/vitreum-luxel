@@ -12,6 +12,9 @@
 #include <format>
 #include <array>
 #include <span>
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 
 static luxel::WindowHandle to_luxel(const vitreum::NativeWindowHandle& win_handle)
 {
@@ -101,6 +104,7 @@ struct RenderWindow
 	vitreum::Window window{};
 	luxel::Ref<luxel::Swapchain> swapchain{};
 	luxel::ClearColor clear{ 0.0f, 0.0f, 0.0f, 1.0f };
+	luxel::Camera2D camera{ 2.0f, 2.0f };   // Una por ventana: cada una tiene su propia relación de aspecto
 	bool confirm_close{ false };        // Pregunta antes de cerrar (la ventana principal)
 	luxel::Size2D last_extent{};        // Para avisar solo cuando cambia el tamaño de la swapchain
 };
@@ -150,9 +154,24 @@ static Scene create_scene(luxel::Device& device, luxel::Format color_format)
 		.format       = color_format
 	});
 
-	constexpr uint32_t width  = 256;
-	constexpr uint32_t height = 256;
-	auto pixels = make_checkerboard(width, height, 32);
+	//constexpr uint32_t width  = 256;
+	//constexpr uint32_t height = 256;
+	//auto pixels = make_checkerboard(width, height, 32);
+	int img_width{};
+	int img_height{};
+	int img_channels{};
+
+	stbi_set_flip_vertically_on_load(1);
+	stbi_uc* data = stbi_load("D:/IriaGameResources/iriaBase01.png", &img_width, &img_height, &img_channels, 4);
+	if (!data){
+		return{};
+	}
+	const size_t byte_count = static_cast<size_t>(img_width) * static_cast<size_t>(img_height) * 4;
+	std::span<const std::byte> pixels{ reinterpret_cast<const std::byte*>(data), byte_count };
+
+	const uint32_t width  = img_width;
+	const uint32_t height = img_height;
+
 	scene.texture = device.create_texture({
 		.width        = width,
 		.height       = height,
@@ -218,7 +237,16 @@ static void render_window_frame(luxel::Device& device, RenderWindow& render_wind
 		return;
 	}
 
-	const auto xform_matrix = luxel::math::Matrix4x4::rotateZ(angle);
+	// La cámara mide 2 unidades de alto y 2 * aspecto de ancho: así 1 unidad del
+	// mundo mide lo mismo en horizontal que en vertical y el quad se ve cuadrado
+	// sea cual sea el tamaño de la ventana. Se lee el tamaño después de begin_frame
+	// porque la swapchain pudo recrearse al empezar el frame.
+	const auto extent = render_window.swapchain->extent();
+	const float aspect = extent.height > 0 ? static_cast<float>(extent.width) / static_cast<float>(extent.height) : 1.0f;
+	render_window.camera.set_viewport_size(2.0f * aspect, 2.0f);
+
+	// proyección * vista * modelo: el giro ocurre en unidades del mundo y la proyección lo ajusta a la ventana.
+	const auto xform_matrix = render_window.camera.view_proj_matrix() * luxel::math::Matrix4x4::rotateZ(angle);
 	auto buf_alloc = frame->allocate(std::as_bytes(std::span(xform_matrix.m)));
 	const std::array<uint32_t, 5> push_constants{
 		scene.vertex_buffer->bindless_index(), buf_alloc.slot_index, buf_alloc.offset,

@@ -4,7 +4,7 @@ project(test_1 LANGUAGES CXX)
 
 add_executable(test_1
     src/test_1.cpp
-)
+ "src/stb_image.h")
 
 target_link_libraries(test_1
     PRIVATE
