@@ -9,6 +9,7 @@ message(STATUS "DXC executable: ${Vulkan_dxc_EXECUTABLE}")
 file(GLOB lista_hlsl_shaders CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.hlsl")
 
 set(shader_spv_files)
+set(shader_header_files)
 
 foreach(hlsl_shader IN LISTS lista_hlsl_shaders)
     get_filename_component(shader_name "${hlsl_shader}" NAME_WE)
@@ -49,10 +50,24 @@ foreach(hlsl_shader IN LISTS lista_hlsl_shaders)
         DEPENDS "${hlsl_shader}"
         VERBATIM
     )
+
+    set(shader_header "${CMAKE_CURRENT_BINARY_DIR}/shaders/${shader_name}_spv.h")
+    list(APPEND shader_header_files "${shader_header}")
+
+    add_custom_command(
+        OUTPUT "${shader_header}"
+        COMMAND "${CMAKE_COMMAND}"
+                "-DINPUT=${shader_output}"
+                "-DOUTPUT=${shader_header}"
+                "-DNAME=${shader_name}_spv"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_spirv.cmake"
+        DEPENDS "${shader_output}" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_spirv.cmake"
+        VERBATIM
+    )
 endforeach()
 
 add_custom_target(compile_shaders ALL
-    DEPENDS ${shader_spv_files}
+    DEPENDS ${shader_header_files}
     SOURCES ${lista_hlsl_shaders}
 )
 
@@ -92,7 +107,20 @@ add_library(luxel STATIC
     "src/backends/vulkan/vulkan_frame.cpp"
     "include/luxel/sampler.h"
     "include/luxel/texture.h"
- "include/luxel/flags.h" "src/backends/vulkan/vulkan_sampler.h" "src/backends/vulkan/vulkan_sampler.cpp" "src/backends/vulkan/vulkan_texture.h" "src/backends/vulkan/vulkan_texture.cpp" "src/free_list_allocator.h" "src/free_list_allocator.cpp" "src/backends/vulkan/vulkan_memory_block.h" "src/backends/vulkan/vulkan_memory_block.cpp" "src/backends/vulkan/vulkan_memory_allocator.h" "src/backends/vulkan/vulkan_memory_allocator.cpp" "include/luxel/cameras.h" "src/cameras.cpp")
+    "include/luxel/flags.h"
+    "src/backends/vulkan/vulkan_sampler.h"
+    "src/backends/vulkan/vulkan_sampler.cpp"
+    "src/backends/vulkan/vulkan_texture.h"
+    "src/backends/vulkan/vulkan_texture.cpp"
+    "src/free_list_allocator.h"
+    "src/free_list_allocator.cpp"
+    "src/backends/vulkan/vulkan_memory_block.h"
+    "src/backends/vulkan/vulkan_memory_block.cpp"
+    "src/backends/vulkan/vulkan_memory_allocator.h"
+    "src/backends/vulkan/vulkan_memory_allocator.cpp"
+    "include/luxel/cameras.h"
+    "src/cameras.cpp"
+)
 
 add_dependencies(luxel compile_shaders)
 

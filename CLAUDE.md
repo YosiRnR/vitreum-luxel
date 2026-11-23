@@ -32,6 +32,8 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   una cola que se consume con pop_event().
 - NativeWindowHandle es el puente hacia la creación de la superficie Vulkan.
 - Diseño completo del RHI de luxel en `docs/rhi-design.md` (léelo antes de tocar luxel).
+- Capas por encima del RHI (Renderer2D, Renderer3D, UI, escena) y su plan de
+  hitos (R1-R6) en `docs/renderers-design.md`.
 - Capas de luxel: API pública en `luxel/include/luxel/` (solo puede incluir
   otras cabeceras públicas o std; nunca Vulkan); privado en `luxel/src/`,
   con backends en `luxel/src/backends/<api>/`.
@@ -103,8 +105,7 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   con `dxc` (del SDK de Vulkan) todos los `luxel/shaders/*_vs.hlsl` y
   `*_ps.hlsl` a `<build>/luxel/shaders/*.spv` (target `compile_shaders`,
   dependencia de `luxel`); el perfil y la entrada se deducen del sufijo del
-  nombre. `test_1` y `test_deferred` reciben la carpeta con la definición
-  `LUXEL_SHADER_DIR`.
+  nombre (desde R1a, además, se incrustan como cabeceras: ver más abajo).
   Hito 6 del RHI (6a-6e hechos): `Buffer`. API pública en
   `luxel/include/luxel/buffer.h`: `BufferUsage` (flags `Storage`, `Index`,
   `TransferDst`, con `|`, `&`, `|=` y `has_flag`), `BufferDescriptor` (con
@@ -246,8 +247,22 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   por la matriz que reciba). Con `orthographic` tipo OpenGL, +Y del mundo va
   hacia abajo en pantalla (Vulkan); decidir la convención de Y de la cámara 2D
   antes de usarla en serio.
-- Siguiente: los shaders propios del motor incrustados en el ejecutable (hoy
-  los tests leen los `.spv` de disco). Pendiente del hito 8, para más
+- Hecho (R1a, shaders incrustados): `luxel/cmake/embed_spirv.cmake` (script que
+  se ejecuta con `cmake -P`; lee el `.spv` con `file(READ ... HEX)` y escribe
+  una cabecera con `inline constexpr std::uint32_t <nombre>_spv[]`, dando la
+  vuelta a los bytes de cada palabra por ser little-endian; la primera palabra
+  es el número mágico `0x07230203`). En `luxel/CMakeLists.txt` cada shader
+  tiene dos recetas encadenadas: `.hlsl` -> `dxc` -> `.spv` -> script ->
+  `<build>/luxel/shaders/<nombre>_spv.h` (el script está en `DEPENDS` para
+  regenerar si cambia); `compile_shaders` pide las cabeceras. `test_1` y
+  `test_deferred` incluyen esa carpeta (adiós a `LUXEL_SHADER_DIR` y a leer de
+  disco) y pasan el array directamente como `span<const uint32_t>`.
+  IntelliSense marca las cabeceras en las configuraciones aún no compiladas
+  (no existen hasta compilar): es normal. Pendiente para R2: convertir el
+  `foreach` en una función `luxel_embed_shaders(target ...)` para que los
+  shaders del motor sean privados de luxel y cada test compile los suyos.
+- Siguiente: R1b de `docs/renderers-design.md`, blending configurable en
+  `GraphicsPipelineDescriptor`. Pendiente del hito 8, para más
   adelante: llamar a `trim()` también de forma periódica (p. ej. en
   `begin_frame`) si aparecen más rutas de subida grandes, y asignaciones
   dedicadas si hay recursos enormes de vida larga.

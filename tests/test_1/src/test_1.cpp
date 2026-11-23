@@ -1,10 +1,8 @@
 #include <vitreum/vitreum.h>
 #include <luxel/luxel.h>
-#include <filesystem>
 #include <stdexcept>
 #include <iostream>
 #include <algorithm>
-#include <fstream>
 #include <cstdint>
 #include <cstddef>
 #include <memory>
@@ -14,6 +12,8 @@
 #include <span>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+#include "shader_vs_spv.h"
+#include "shader_ps_spv.h"
 
 
 static luxel::WindowHandle to_luxel(const vitreum::NativeWindowHandle& win_handle)
@@ -37,23 +37,6 @@ static luxel::WindowHandle to_luxel(const vitreum::NativeWindowHandle& win_handl
 	}
 
 	return result;
-}
-
-static std::vector<uint32_t> read_binary_file(const std::filesystem::path& path)
-{
-	std::ifstream file(path, std::ios::ate | std::ios::binary);
-	if (!file) {
-		throw std::runtime_error("No se pudo abrir el archivo: " + path.string());
-	}
-
-	const auto size = static_cast<size_t>(file.tellg());
-	if (size % 4 != 0) {
-		throw std::runtime_error("El tamaño del fichero SPV de shaders debe ser múltiplo de 4 para ser correcto");
-	}
-	std::vector<uint32_t> data(size / 4);
-	file.seekg(0);
-	file.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(size));
-	return data;
 }
 
 static std::vector<std::byte> make_checkerboard(uint32_t width, uint32_t height, uint32_t tile_size)
@@ -143,14 +126,11 @@ static Scene create_scene(luxel::Device& device, luxel::Format color_format)
 {
 	Scene scene;
 
-	auto vs_code = read_binary_file(std::filesystem::path(LUXEL_SHADER_DIR) / "shader_vs.spv");
-	auto ps_code = read_binary_file(std::filesystem::path(LUXEL_SHADER_DIR) / "shader_ps.spv");
-
 	// El pipeline se crea para un formato de color: sirve para las ventanas cuya
 	// swapchain use ese mismo formato (aquí, todas).
 	scene.pipeline = device.create_graphics_pipeline({
-		.vs_byte_code = std::span<uint32_t>(vs_code),
-		.ps_byte_code = std::span<uint32_t>(ps_code),
+		.vs_byte_code = shader_vs_spv,
+		.ps_byte_code = shader_ps_spv,
 		.format       = color_format
 	});
 

@@ -11,17 +11,16 @@
 #include "backends/vulkan/vulkan_frame_allocator.h"
 #include "backends/vulkan/vulkan_memory_allocator.h"
 #include "backends/vulkan/vulkan_memory_block.h"
-
-#include <filesystem>
 #include <stdexcept>
 #include <iostream>
 #include <utility>
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
-#include <fstream>
 #include <vector>
 #include <span>
+#include "shader_vs_spv.h"
+#include "shader_ps_spv.h"
 
 namespace
 {
@@ -113,23 +112,6 @@ struct FrameRig
 	luxel::Frame* begin() { return device->begin_frame(*swapchain); }
 	void end(luxel::Frame& f) { device->end_frame(f); }
 };
-
-static std::vector<uint32_t> read_binary_file(const std::filesystem::path& path)
-{
-	std::ifstream file(path, std::ios::ate | std::ios::binary);
-	if (!file) {
-		throw std::runtime_error("No se pudo abrir el archivo: " + path.string());
-	}
-
-	const auto size = static_cast<size_t>(file.tellg());
-	if (size % 4 != 0) {
-		throw std::runtime_error("El tamaño del fichero SPV de shaders debe ser múltiplo de 4 para ser correcto");
-	}
-	std::vector<uint32_t> data(size / 4);
-	file.seekg(0);
-	file.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(size));
-	return data;
-}
 
 // 1. Soltar el ultimo Ref no destruye en el acto: va a la cola.
 static void test_not_destroyed_immediately()
@@ -233,11 +215,9 @@ static void test_pipeline()
 	std::cout << "[6] crear y soltar pipeline\n";
 	auto device = make_device();
 	{
-		auto vs_code = read_binary_file(std::filesystem::path(LUXEL_SHADER_DIR) / "shader_vs.spv");
-		auto ps_code = read_binary_file(std::filesystem::path(LUXEL_SHADER_DIR) / "shader_ps.spv");
 		auto pipeline = static_cast<luxel::vulkan::VulkanDevice*>(device.get())->create_graphics_pipeline({
-			.vs_byte_code = std::span<uint32_t>(vs_code),
-			.ps_byte_code = std::span<uint32_t>(ps_code),
+			.vs_byte_code = shader_vs_spv,
+			.ps_byte_code = shader_ps_spv,
 			.format = luxel::Format::B8G8R8A8_SRGB
 		});
 	}
