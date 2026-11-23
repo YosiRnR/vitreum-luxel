@@ -5,7 +5,6 @@
 #include "vulkan_staging_buffer.h"
 #include <luxel/buffer.h>
 #include <utility>
-#include <cstdint>
 
 namespace luxel::vulkan
 {
