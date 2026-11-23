@@ -89,8 +89,10 @@ de subirlos. Con transparencia el orden importa (de atrás hacia delante).
 6. **Orden**: `std::stable_sort` por `layer` en `end()`; dentro de una capa se
    respeta el orden de envío.
 
-Límite: el asignador por frame tiene 1 MB, unos 16.000 quads de 64 bytes; si
-no caben, `end()` parte el lote en varios `draw` (R2d).
+Límite: una reserva del asignador por frame es de 1 MB como mucho, 16.384
+quads de 64 bytes; si no caben, `end()` parte el lote en varios `draw` (R2d).
+El asignador encadena bloques de 1 MB, así que el total por frame no tiene
+tope fijo.
 
 ## UI
 
@@ -165,8 +167,12 @@ La UI se divide en dos partes que no conviene mezclar:
     "bleeding" del filtrado lineal). Recursos de los tests en `tests/assets/`
     (sin versionar). Ventana "Iria": fondo + personaje animado desde una hoja
     de sprites real (correr, idle, saltar) en un solo lote.
-  - R2d: orden por capa y lotes partidos si no caben; test sin GPU de la parte
-    de CPU.
+  - R2d (hecho): orden por capa (`stable_sort` de índices solo si hace falta)
+    y lotes partidos en draws de 16.384 quads. Para que partir sirva de algo,
+    el asignador por frame del RHI crece por bloques de 1 MB (cada uno con su
+    hueco bindless); `k_frame_allocation_max_size` es el máximo de una
+    reserva. Test sin GPU en `tests/test_renderer2d`.
+  - Con esto R2 queda completo.
 - **R3. Texto**: primero fuente bitmap (imagen con los caracteres en rejilla);
   más adelante, rasterizar TTF a mano (hito de aprendizaje, como el PNG).
 - **R4. Primitivas de UI**: rectángulos redondeados con SDF, bordes, recorte.
@@ -181,4 +187,5 @@ La UI se divide en dos partes que no conviene mezclar:
 
 Tienen sentido, pero cuando aparezca el problema que resuelven: render graph,
 ECS "de verdad", rendering dirigido por GPU (draws indirectos), PBR. Del RHI:
-asignaciones dedicadas y `trim()` periódico (hito 8).
+asignaciones dedicadas y `trim()` periódico (hito 8), y recortar los bloques
+sobrantes del asignador por frame tras un pico (R2d).

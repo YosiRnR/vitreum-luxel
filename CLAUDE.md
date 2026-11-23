@@ -348,8 +348,31 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   `SpriteAnimation` + `animation_cell()`, `sprite_sheet_uv(cell, columnas,
   filas, ...)` genérica y `load_png_texture()`. `tests/assets/` NO se versiona
   (imágenes generadas con IA para un juego para la sobrina del usuario; en
-  `.gitignore`). Hoy el fondo va primero por orden de envío: `layer` ya se
-  rellena, pero no se usa hasta R2d.
+  `.gitignore`).
+  R2d hecho (R2 completo). RHI: `k_frame_allocation_max_size` (1 MB) público
+  en `frame.h` = máximo de UNA reserva de `Frame::allocate`; el total por
+  frame ya no tiene tope: `VulkanFrameAllocator` es una lista de bloques
+  (`Chunk`: memoria + `VkBuffer` + hueco bindless, en ese orden de miembros)
+  que crece bajo demanda (si no cabe, salta al siguiente bloque desde el
+  offset 0; si no existe lo crea; con locales hasta el final para no quedar
+  a medias si lanza) y `reset_cursor()` vuelve al bloque 0 sin destruir
+  nada. El primer bloque se crea en el constructor (misma línea base de
+  memoria que antes). El destructor libera los huecos en orden inverso (la
+  tabla los reutiliza LIFO). Los bloques no se recortan (pendiente si un pico
+  deja memoria de sobra). `Renderer2D`: `m_layers` paralelo a `m_instances`;
+  `end()` ordena con `detail::stable_order_by_layer` (`luxel_2d/src/batch_order.h`,
+  solo std: devuelve false sin tocar nada si ya están en orden, si no ordena
+  índices con `stable_sort` y luego copia cada quad a `m_sorted`) y trocea con
+  `draw_count`/`draw_range` en draws de `k_max_quads_per_draw` = 16.384 (1 MB
+  / 64), un `allocate` + push constants + `draw` por tramo.
+  `last_batch_draw_count()`. Tests: `tests/test_renderer2d` (sin GPU, caja
+  blanca de `batch_order.h`: ya ordenado, estable, extremos de int32, 40.000
+  quads, troceo); `test_deferred` caso 11 actualizado (llenar un bloque salta
+  a otro), 24 (3 MB en un frame = 3 bloques, reutilizados) y 25 (`Renderer2D`
+  con 40.000 quads en capas mezcladas = 3 draws, `logic_error` fuera de orden;
+  `test_deferred` enlaza ya con `luxel_2d`). `test_1`: estrés de 150x150 =
+  22.500 quads en 2 draws (2,4 ms de CPU en Debug) y, en la escena de Iria, el
+  fondo se envía DESPUÉS de Iria con `layer = -1` (sale detrás).
   Pendiente del hito 8, para más
   adelante: llamar a `trim()` también de forma periódica (p. ej. en
   `begin_frame`) si aparecen más rutas de subida grandes, y asignaciones
