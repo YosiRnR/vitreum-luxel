@@ -2,74 +2,11 @@ cmake_minimum_required(VERSION 3.21)
 
 project(luxel LANGUAGES CXX)
 
-find_package(Vulkan REQUIRED COMPONENTS dxc)
-message(STATUS "DXC library: ${Vulkan_dxc_LIBRARY}")
-message(STATUS "DXC executable: ${Vulkan_dxc_EXECUTABLE}")
-
-file(GLOB lista_hlsl_shaders CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.hlsl")
-
-set(shader_spv_files)
-set(shader_header_files)
-
-foreach(hlsl_shader IN LISTS lista_hlsl_shaders)
-    get_filename_component(shader_name "${hlsl_shader}" NAME_WE)
-
-    if(shader_name MATCHES "_(vs|ps)$")
-        set(shader_stage "${CMAKE_MATCH_1}")
-    else()
-        message(STATUS "Ignorando shader sin sufijo _vs/_ps: ${hlsl_shader}")
-        continue()
-    endif()
-
-    if(shader_stage STREQUAL "vs")
-        set(shader_profile "vs_6_0")
-        set(shader_entry   "vs_main")
-    elseif(shader_stage STREQUAL "ps")
-        set(shader_profile "ps_6_0")
-        set(shader_entry   "ps_main")
-    else()
-        message(STATUS "Ignorando shader sin prefijo vs/ps: ${hlsl_shader}")
-        continue()
-    endif()
-
-    set(shader_output "${CMAKE_CURRENT_BINARY_DIR}/shaders/${shader_name}.spv")
-    list(APPEND shader_spv_files "${shader_output}")
-    message(STATUS "Shader: ${hlsl_shader} -> ${shader_output}")
-
-    add_custom_command(
-        OUTPUT "${shader_output}"
-        COMMAND "${CMAKE_COMMAND}" -E make_directory
-                "${CMAKE_CURRENT_BINARY_DIR}/shaders"
-        COMMAND "${Vulkan_dxc_EXECUTABLE}"
-                -spirv
-                -T "${shader_profile}"
-                -E "${shader_entry}"
-                "-fspv-target-env=vulkan1.3"
-                -Fo "${shader_output}"
-                "${hlsl_shader}"
-        DEPENDS "${hlsl_shader}"
-        VERBATIM
-    )
-
-    set(shader_header "${CMAKE_CURRENT_BINARY_DIR}/shaders/${shader_name}_spv.h")
-    list(APPEND shader_header_files "${shader_header}")
-
-    add_custom_command(
-        OUTPUT "${shader_header}"
-        COMMAND "${CMAKE_COMMAND}"
-                "-DINPUT=${shader_output}"
-                "-DOUTPUT=${shader_header}"
-                "-DNAME=${shader_name}_spv"
-                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_spirv.cmake"
-        DEPENDS "${shader_output}" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_spirv.cmake"
-        VERBATIM
-    )
-endforeach()
-
-add_custom_target(compile_shaders ALL
-    DEPENDS ${shader_header_files}
-    SOURCES ${lista_hlsl_shaders}
-)
+# Define la función luxel_embed_shaders() (y busca el SDK de Vulkan con dxc).
+# luxel ya no tiene shaders propios: cada target (luxel_2d, los tests...) llama
+# a la función con los suyos. Las funciones de CMake son globales, así que los
+# CMakeLists que se procesen después de este pueden usarla.
+include(cmake/luxel_shaders.cmake)
 
 add_library(luxel STATIC
     
@@ -121,8 +58,6 @@ add_library(luxel STATIC
     "include/luxel/cameras.h"
     "src/cameras.cpp"
 )
-
-add_dependencies(luxel compile_shaders)
 
 target_include_directories(luxel
     PUBLIC

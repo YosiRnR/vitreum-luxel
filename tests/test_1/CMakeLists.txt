@@ -7,8 +7,12 @@ add_executable(test_1
     "src/stb_image.h"
 )
 
-target_include_directories(test_1 PRIVATE
-    "${CMAKE_BINARY_DIR}/luxel/shaders"
+# Compila e incrusta los shaders que usa este test: genera shader_vs_spv.h y
+# shader_ps_spv.h en una carpeta privada de test_1 (ver luxel/cmake/luxel_shaders.cmake).
+# Los .hlsl viven en tests/shaders porque test_deferred también los usa.
+luxel_embed_shaders(test_1
+    ../shaders/shader_vs.hlsl
+    ../shaders/shader_ps.hlsl
 )
 
 target_link_libraries(test_1

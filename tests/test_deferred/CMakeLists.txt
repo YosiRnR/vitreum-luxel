@@ -14,7 +14,12 @@ add_executable(test_deferred
 target_include_directories(test_deferred
     PRIVATE
         "$<TARGET_PROPERTY:luxel,SOURCE_DIR>/src"
-        "${CMAKE_BINARY_DIR}/luxel/shaders"
+)
+
+# Los mismos shaders que test_1, compilados aparte para este target.
+luxel_embed_shaders(test_deferred
+    ../shaders/shader_vs.hlsl
+    ../shaders/shader_ps.hlsl
 )
 
 target_link_libraries(test_deferred
