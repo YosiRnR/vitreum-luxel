@@ -304,6 +304,29 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   llama). `luxel` ya no tiene shaders; los de `test_1` y `test_deferred` están
   en `tests/shaders/` y cada test los compila aparte. Limitación: no se siguen
   los `#include` de los `.hlsl` (si aparecen, usar `DEPFILE` de dxc).
+  R2b hecho (escrito por el asistente, comentado para que el usuario lo lea):
+  biblioteca `luxel_2d/` (target aparte, `target_link_libraries(... PUBLIC
+  luxel)`, añadida en el CMakeLists raíz tras `luxel`), cabecera pública
+  `luxel_2d/include/luxel/renderer2d.h` (`Color`, `Quad`, `Renderer2D`),
+  `src/renderer2d.cpp` y shaders privados `quad_vs.hlsl`/`quad_ps.hlsl`.
+  `Quad` añade un campo `sampler` (`nullptr` = lineal con ClampToEdge del
+  renderer) que va en el relleno de `QuadInstance`. `QuadInstance` es un
+  tipo privado anidado definido en el `.cpp` (por eso el destructor se define
+  allí y los `static_assert` de tamaño y offsets están en el constructor);
+  usa arrays de `float`, no `Vector2f`, para que el formato no dependa de
+  `math`. Textura blanca 1x1 `R8G8B8A8_UNorm` para colores lisos (el PS
+  siempre hace `textura * color`). Push constants: `column_major float4x4`
+  (sin trasponer) + slot + offset = 72 bytes. El VS calcula esquina, giro y
+  UV (V invertida: `uv_min` es la esquina de arriba a la izquierda); los
+  índices de textura/sampler pasan al PS con `nointerpolation` y se usan con
+  `NonUniformResourceIndex` (obligatorio: varían dentro de un draw).
+  `begin`/`draw_quad`/`end` lanzan `logic_error` si se usan fuera de orden;
+  `end()` cierra el lote aunque algo lance. `test_1` ya no usa
+  `tests/shaders` (solo `test_deferred`): dibuja con un `Renderer2D`
+  compartido por las dos ventanas 5 rectángulos, el sprite girando y un
+  rectángulo semitransparente en un solo draw, sin avisos de validación.
+  Textura, UV y rotación ya están implementadas; R2c queda en probarlas a
+  fondo (10.000 quads, recortes de UV, sampler `Nearest`).
   Pendiente del hito 8, para más
   adelante: llamar a `trim()` también de forma periódica (p. ej. en
   `begin_frame`) si aparecen más rutas de subida grandes, y asignaciones

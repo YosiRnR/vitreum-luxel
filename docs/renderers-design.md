@@ -74,10 +74,13 @@ de subirlos. Con transparencia el orden importa (de atrás hacia delante).
 3. **`draw_quad(const Quad&)`**: struct con valores por defecto y designated
    initializers: `position` (centro), `size`, `rotation` (radianes,
    antihorario), `color`, `texture` (`nullptr` = textura blanca, es decir,
-   color liso), `uv_min`/`uv_max`, `layer`.
+   color liso), `sampler` (`nullptr` = lineal con ClampToEdge; añadido en
+   R2b, ocupa parte del relleno), `uv_min` (arriba a la izquierda) /
+   `uv_max` (abajo a la derecha), `layer`.
 4. **Registro en GPU (`QuadInstance`, 64 bytes)**: `float2 position`,
    `float2 size`, `float2 uv_min`, `float2 uv_max`, `float4 color`,
-   `float rotation`, `uint texture_index`, `uint2` de relleno. Las esquinas se
+   `float rotation`, `uint texture_index`, `uint sampler_index`, `uint` de
+   relleno. Las esquinas se
    calculan en el vertex shader. La capa no va a la GPU (solo ordena en CPU).
    `static_assert(sizeof(QuadInstance) == 64)` para no desincronizarse del HLSL.
    El color en `float4` por sencillez (empaquetar en RGBA8 queda como mejora).
@@ -152,9 +155,12 @@ La UI se divide en dos partes que no conviene mezclar:
     (`luxel/cmake/luxel_shaders.cmake`); cada target
     compila e incrusta sus propios shaders (los de `test_1` y `test_deferred`
     pasan a `tests/shaders/`; `luxel` se queda sin shaders).
-  - R2b: target `luxel_2d` y `Renderer2D` con `begin`/`draw_quad`/`end`, solo
-    color (textura blanca) y sin rotación; un rectángulo en `test_1`.
-  - R2c: textura, UVs y rotación; ~10.000 quads en `test_1`.
+  - R2b (hecho): biblioteca `luxel_2d` (`luxel_2d/`) y `Renderer2D` con
+    `begin`/`draw_quad`/`end`. Salió completo de una vez: color, textura,
+    sampler, UVs y rotación. `test_1` dibuja rectángulos de color, un sprite
+    girando y un rectángulo semitransparente en un solo draw.
+  - R2c: probar textura, UVs y rotación a fondo: ~10.000 quads en `test_1`,
+    recortes de UV (un sprite de una hoja de sprites), sampler `Nearest`.
   - R2d: orden por capa y lotes partidos si no caben; test sin GPU de la parte
     de CPU.
 - **R3. Texto**: primero fuente bitmap (imagen con los caracteres en rejilla);
