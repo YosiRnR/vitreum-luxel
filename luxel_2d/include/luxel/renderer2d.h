@@ -40,7 +40,7 @@ namespace luxel
 		Sampler* sampler{ nullptr };            // nullptr = sampler lineal por defecto del renderer
 		math::Vector2f uv_min{ 0.0f, 0.0f };    // UV de la esquina de ARRIBA a la izquierda
 		math::Vector2f uv_max{ 1.0f, 1.0f };    // UV de la esquina de ABAJO a la derecha
-		int32_t layer{ 0 };                     // orden de dibujo (de momento sin usar: R2d)
+		int32_t layer{ 0 };                     // capa: las bajas se dibujan antes (detrás); a igual capa, orden de envío
 	};
 
 	// Uso típico, dentro de un frame:
@@ -74,13 +74,19 @@ namespace luxel
 		// Añade un quad al lote. No toca la GPU: solo escribe en un vector en CPU.
 		void draw_quad(const Quad& quad);
 
-		// Cierra el lote: copia los quads a memoria de GPU (Frame::allocate) y
-		// los dibuja con un único draw. Debe llamarse entre begin_rendering y
-		// end_rendering. Lanza si no había un lote abierto.
+		// Cierra el lote: ordena los quads por capa (estable), los copia a memoria
+		// de GPU (Frame::allocate) y los dibuja. Un draw por cada
+		// k_max_quads_per_draw quads (casi siempre, uno solo). Debe llamarse
+		// entre begin_rendering y end_rendering. Lanza si no había un lote abierto.
 		void end();
 
-		// Cuántos quads tenía el último lote cerrado (para estadísticas/tests).
+		// Máximo de quads por draw: los que caben en una reserva del asignador
+		// por frame (k_frame_allocation_max_size / 64 bytes = 16.384).
+		static const uint32_t k_max_quads_per_draw;
+
+		// Estadísticas del último lote cerrado (para el título de test_1 y tests).
 		uint32_t last_batch_quad_count() const noexcept { return m_last_batch_quad_count; }
+		uint32_t last_batch_draw_count() const noexcept { return m_last_batch_draw_count; }
 
 	private:
 		// El registro que llega a la GPU (64 bytes). Se define en el .cpp: es un
@@ -96,11 +102,17 @@ namespace luxel
 		Ref<Texture> m_white_texture;            // 1x1 blanca: color * blanco = color
 		Ref<Sampler> m_default_sampler;
 
-		std::vector<QuadInstance> m_instances;   // el lote en CPU; se reutiliza (no libera memoria entre frames)
+		// El lote en CPU. Todos se reutilizan de un frame a otro (clear() no
+		// libera memoria), así que tras los primeros frames no se reserva nada.
+		std::vector<QuadInstance> m_instances;   // en orden de envío
+		std::vector<int32_t> m_layers;           // capa de cada quad (paralelo a m_instances)
+		std::vector<uint32_t> m_order;           // orden de dibujo, si hubo que reordenar
+		std::vector<QuadInstance> m_sorted;      // los quads ya reordenados, si hubo que reordenar
 
 		Frame* m_frame{ nullptr };               // != nullptr <=> hay un lote abierto
 		math::Matrix4x4 m_view_proj{};
 		uint32_t m_last_batch_quad_count{ 0 };
+		uint32_t m_last_batch_draw_count{ 0 };
 	};
 
 } // namespace luxel

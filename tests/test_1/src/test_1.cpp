@@ -341,11 +341,13 @@ static void process_events(RenderWindow& render_window)
 	}
 }
 
-// Prueba de estrés: una rejilla de 100x100 = 10.000 quads que giran cada uno a
-// su aire, en UN solo lote (un solo draw). Uno de cada 7 lleva la textura del
-// PNG y el resto la blanca: comprueba que mezclar texturas no rompe el lote.
+// Prueba de estrés: una rejilla de 150x150 = 22.500 quads que giran cada uno a
+// su aire, en UN solo lote. No caben en una reserva del asignador por frame
+// (máximo 16.384 quads de 64 bytes = 1 MB), así que el Renderer2D los dibuja
+// en 2 draws (el título lo muestra). Uno de cada 7 lleva la textura del PNG y
+// el resto la blanca: mezclar texturas no rompe el lote.
 // Ocupa un cuadrado de 2x2 unidades centrado (la cámara mide 2 de alto).
-constexpr int k_stress_grid = 100;   // 100 x 100 = 10.000 quads (640 KB de los 1 MB del asignador por frame)
+constexpr int k_stress_grid = 150;   // 150 x 150 = 22.500 quads (1,4 MB: 2 bloques del asignador por frame)
 
 static void draw_stress_scene(luxel::Renderer2D& r2d, const Scene& scene, float time)
 {
@@ -433,20 +435,12 @@ static void draw_sprite_sheet_scene(luxel::Renderer2D& r2d, const Scene& scene, 
 //   3) salta,
 //   4) sale corriendo por la derecha.
 // view_width: ancho visible en unidades del mundo (2 * aspecto de la ventana).
+//
+// Ojo: el fondo se envía DESPUÉS de Iria a propósito. Sin capas, el fondo
+// (enviado el último) la taparía; con layer = -1 el Renderer2D lo ordena y lo
+// dibuja primero. Es la prueba visual de R2d.
 static void draw_iria_scene(luxel::Renderer2D& r2d, const Scene& scene, float time, float view_width)
 {
-	// --- Fondo ---------------------------------------------------------------
-	// "Cover": que tape toda la vista sin deformarse. Alto 2 (lo que mide la
-	// cámara); si la ventana es más ancha que la imagen, se agranda para cubrir
-	// también el ancho (y se recorta arriba y abajo).
-	const float bg_height = std::max(2.0f, view_width / scene.background_aspect);
-	r2d.draw_quad({
-		.position = { 0.0f, 0.0f },
-		.size     = { bg_height * scene.background_aspect, bg_height },
-		.texture  = scene.background.get(),
-		.layer    = -1   // todavía no se usa (R2d): hoy manda el orden de envío, y el fondo va primero
-	});
-
 	// --- Ciclo de Iria ---------------------------------------------------------
 	constexpr float run_in_time  = 3.0f;
 	constexpr float idle_time    = 3.0f;
@@ -503,13 +497,25 @@ static void draw_iria_scene(luxel::Renderer2D& r2d, const Scene& scene, float ti
 		.uv_max   = uv_max,
 		.layer    = 0
 	});
+
+	// --- Fondo (enviado el último, dibujado el primero) ------------------------
+	// "Cover": que tape toda la vista sin deformarse. Alto 2 (lo que mide la
+	// cámara); si la ventana es más ancha que la imagen, se agranda para cubrir
+	// también el ancho (y se recorta arriba y abajo).
+	const float bg_height = std::max(2.0f, view_width / scene.background_aspect);
+	r2d.draw_quad({
+		.position = { 0.0f, 0.0f },
+		.size     = { bg_height * scene.background_aspect, bg_height },
+		.texture  = scene.background.get(),
+		.layer    = -1   // detrás de Iria (capa 0), aunque se envíe después
+	});
 }
 
 // Promedia el tiempo de CPU del lote y lo pone en el título cada medio segundo.
 // Ojo al leerlo: con vsync los FPS están topados por el monitor; lo que mide el
-// coste del Renderer2D es el tiempo de CPU (construir 10.000 registros,
-// copiarlos con Frame::allocate y grabar el draw), no los FPS.
-static void update_stats(RenderWindow& render_window, double cpu_ms, uint32_t quad_count)
+// coste del Renderer2D es el tiempo de CPU (construir los registros, ordenarlos,
+// copiarlos con Frame::allocate y grabar los draws), no los FPS.
+static void update_stats(RenderWindow& render_window, double cpu_ms, uint32_t quad_count, uint32_t draw_count)
 {
 	auto& stats = render_window.stats;
 	stats.cpu_ms_accum += cpu_ms;
@@ -521,8 +527,8 @@ static void update_stats(RenderWindow& render_window, double cpu_ms, uint32_t qu
 		return;
 	}
 
-	render_window.window.set_title(std::format("{} | {} quads, 1 draw | CPU {:.3f} ms/lote | {:.0f} FPS",
-		render_window.base_title, quad_count, stats.cpu_ms_accum / stats.frames, stats.frames / elapsed));
+	render_window.window.set_title(std::format("{} | {} quads, {} draw(s) | CPU {:.3f} ms/lote | {:.0f} FPS",
+		render_window.base_title, quad_count, draw_count, stats.cpu_ms_accum / stats.frames, stats.frames / elapsed));
 	stats = FrameStats{};
 }
 
@@ -565,7 +571,7 @@ static void render_window_frame(luxel::Device& device, luxel::Renderer2D& r2d, R
 
 	device.end_frame(*frame);
 
-	update_stats(render_window, cpu_ms, r2d.last_batch_quad_count());
+	update_stats(render_window, cpu_ms, r2d.last_batch_quad_count(), r2d.last_batch_draw_count());
 
 	const auto now = render_window.swapchain->extent();
 	if (now.width != render_window.last_extent.width || now.height != render_window.last_extent.height) {

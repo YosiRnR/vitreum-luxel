@@ -1,4 +1,5 @@
 #include <luxel/renderer2d.h>
+#include "batch_order.h"
 
 #include <array>
 #include <cstddef>
@@ -43,6 +44,11 @@ namespace luxel
 	// Los static_assert que vigilan este formato están en el constructor: como
 	// QuadInstance es privado de Renderer2D, solo se puede nombrar desde dentro
 	// de la clase (un static_assert suelto aquí fuera no compilaría).
+
+	// 1 MB / 64 bytes = 16.384 quads. Se define aquí (y no en la cabecera)
+	// porque necesita sizeof(QuadInstance), que solo se conoce en este .cpp.
+	const uint32_t Renderer2D::k_max_quads_per_draw =
+		static_cast<uint32_t>(k_frame_allocation_max_size / sizeof(Renderer2D::QuadInstance));
 
 	namespace
 	{
@@ -110,8 +116,9 @@ namespace luxel
 			.address_mode_w = SamplerAddressMode::ClampToEdge
 		});
 
-		// Reserva inicial: evita realojar el vector en los primeros frames.
+		// Reserva inicial: evita realojar los vectores en los primeros frames.
 		m_instances.reserve(1024);
+		m_layers.reserve(1024);
 	}
 
 	// Definido aquí (y no "= default" en la cabecera) porque destruir
@@ -133,6 +140,7 @@ namespace luxel
 		// clear() no libera la memoria del vector: el frame siguiente reutiliza
 		// la misma capacidad sin volver a reservar.
 		m_instances.clear();
+		m_layers.clear();
 	}
 
 	void Renderer2D::draw_quad(const Quad& quad)
@@ -160,7 +168,8 @@ namespace luxel
 			.sampler_index = sampler.bindless_index(),
 			.padding       = 0
 		});
-		// quad.layer todavía no se usa: el orden por capa llega en R2d.
+		// La capa no va a la GPU: solo sirve para ordenar en end().
+		m_layers.push_back(quad.layer);
 	}
 
 	void Renderer2D::end()
@@ -173,31 +182,59 @@ namespace luxel
 		// para que el siguiente begin() no se queje.
 		Frame& frame = *m_frame;
 		m_frame = nullptr;
-		m_last_batch_quad_count = static_cast<uint32_t>(m_instances.size());
+		const auto quad_count = static_cast<uint32_t>(m_instances.size());
+		m_last_batch_quad_count = quad_count;
+		m_last_batch_draw_count = 0;
 
-		if (m_instances.empty()) {
+		if (quad_count == 0) {
 			return;   // nada que dibujar: ni siquiera enlazamos el pipeline
 		}
 
-		// 1) Copiar TODO el lote de una vez al asignador por frame. Es memoria
-		//    visible por la CPU y la GPU, válida hasta que este frame termine.
-		//    Límite: 1 MB por frame (unos 16.000 quads). Si se pasa, allocate
-		//    lanza; partir el lote en varios draws es el sub-hito R2d.
-		const BufferAllocation allocation = frame.allocate(std::as_bytes(std::span(m_instances)));
+		// 1) Orden por capa. Si ya venían en orden (lo normal: todo en la misma
+		//    capa) no se copia nada y se dibuja directamente m_instances. Si no,
+		//    se copia cada quad a su sitio en m_sorted siguiendo m_order.
+		std::span<const QuadInstance> quads = m_instances;
+		if (detail::stable_order_by_layer(m_layers, m_order))
+		{
+			m_sorted.resize(quad_count);
+			for (uint32_t i = 0; i < quad_count; ++i) {
+				m_sorted[i] = m_instances[m_order[i]];
+			}
+			quads = m_sorted;
+		}
 
-		// 2) Push constants: la matriz y dónde están los quads.
-		const PushConstants push_constants{
-			.view_proj        = m_view_proj.m,
-			.instances_slot   = allocation.slot_index,
-			.instances_offset = allocation.offset
-		};
-
-		// 3) Un único draw para todos los quads: 6 vértices por quad. El
-		//    vertex shader convierte cada SV_VertexID en (quad, esquina).
 		CommandList& commands = frame.commands();
 		commands.bind_pipeline(*m_pipeline);
-		commands.bind_constants(std::as_bytes(std::span(&push_constants, 1)));
-		commands.draw(static_cast<uint32_t>(m_instances.size()) * k_vertices_per_quad);
+
+		// 2) Un draw por tramo de como mucho k_max_quads_per_draw quads (lo que
+		//    cabe en una reserva del asignador por frame). Con menos de 16.384
+		//    quads, que es lo normal, el bucle da una sola vuelta: un draw.
+		//    El orden entre tramos se conserva: el tramo 1 se pinta encima del 0.
+		const uint32_t draws = detail::draw_count(quad_count, k_max_quads_per_draw);
+		for (uint32_t d = 0; d < draws; ++d)
+		{
+			const detail::DrawRange range = detail::draw_range(quad_count, k_max_quads_per_draw, d);
+
+			// a) Copiar el tramo al asignador por frame: memoria visible por la
+			//    CPU y la GPU, válida hasta que este frame termine. Cada tramo
+			//    puede acabar en un bloque distinto (otro slot bindless).
+			const BufferAllocation allocation =
+				frame.allocate(std::as_bytes(quads.subspan(range.first, range.count)));
+
+			// b) Push constants: la matriz y dónde están los quads de ESTE tramo.
+			//    Para el shader, cada tramo empieza en el quad 0 de su offset.
+			const PushConstants push_constants{
+				.view_proj        = m_view_proj.m,
+				.instances_slot   = allocation.slot_index,
+				.instances_offset = allocation.offset
+			};
+			commands.bind_constants(std::as_bytes(std::span(&push_constants, 1)));
+
+			// c) 6 vértices por quad. El vertex shader convierte cada
+			//    SV_VertexID en (quad, esquina).
+			commands.draw(range.count * k_vertices_per_quad);
+			++m_last_batch_draw_count;
+		}
 	}
 
 } // namespace luxel

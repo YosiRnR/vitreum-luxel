@@ -7,6 +7,7 @@
 
 #include <vitreum/vitreum.h>
 #include <luxel/luxel.h>
+#include <luxel/renderer2d.h>
 #include "backends/vulkan/vulkan_device.h"
 #include "backends/vulkan/vulkan_frame_allocator.h"
 #include "backends/vulkan/vulkan_memory_allocator.h"
@@ -370,28 +371,41 @@ static void test_frame_allocator()
 		CHECK(e.offset == 0);
 		CHECK(e.slot_index == first_slot);
 
-		// Desbordamiento: justo la capacidad cabe, un byte mas no.
+		// Bloque lleno (desde R2d): justo la capacidad cabe en el bloque 0; un
+		// byte mas ya no, y en vez de lanzar salta a un bloque NUEVO (otro hueco
+		// bindless, offset 0).
 		const std::vector<std::byte> big(luxel::vulkan::k_frame_allocator_capacity, std::byte{ 0 });
 		allocator.reset_cursor();
 		auto full = allocator.allocate(big);
 		CHECK(full.offset == 0);
+		CHECK(full.slot_index == first_slot);
+		CHECK(allocator.chunk_count() == 1);
 
-		bool threw = false;
-		try { allocator.allocate(bytes.first(1)); } catch (const std::runtime_error&) { threw = true; }
-		CHECK(threw);
+		auto next = allocator.allocate(bytes.first(1));
+		CHECK(next.offset == 0);
+		CHECK(next.slot_index != 0 && next.slot_index != first_slot);
+		CHECK(allocator.chunk_count() == 2);
 
+		// Una reserva MAYOR que un bloque si lanza (hay que partir los datos).
 		allocator.reset_cursor();
 		const std::vector<std::byte> too_big(luxel::vulkan::k_frame_allocator_capacity + 1, std::byte{ 0 });
-		threw = false;
+		bool threw = false;
 		try { allocator.allocate(too_big); } catch (const std::runtime_error&) { threw = true; }
 		CHECK(threw);
 
-		// Tras la excepcion el allocator sigue siendo usable.
+		// Tras la excepcion el allocator sigue siendo usable y no ha cambiado.
 		auto after = allocator.allocate(bytes.first(16));
 		CHECK(after.offset == 0);
+		CHECK(after.slot_index == first_slot);
+
+		// reset_cursor no destruye bloques: el bloque 1 se reutiliza.
+		allocator.reset_cursor();
+		allocator.allocate(big);
+		CHECK(allocator.allocate(bytes.first(1)).slot_index == next.slot_index);
+		CHECK(allocator.chunk_count() == 2);
 	}
 
-	// El destructor ha devuelto el hueco: un allocator nuevo lo reutiliza.
+	// El destructor ha devuelto los huecos: un allocator nuevo reutiliza el primero.
 	{
 		luxel::vulkan::VulkanFrameAllocator allocator(vk_device);
 		const std::vector<std::byte> data(16, std::byte{ 0 });
@@ -899,6 +913,105 @@ static void test_pipeline_blend_modes()
 	CHECK(device->ref_count() == 1);
 }
 
+// 24. Frame::allocate por encima de 1 MB en frames reales (R2d): 3 MB en un
+//     frame ocupan 3 bloques (3 huecos distintos, cada uno desde el offset 0)
+//     y no lanza. Los frames siguientes reutilizan esos bloques.
+static void test_frame_allocate_grows(vitreum::Window& window)
+{
+	std::cout << "[24] Frame::allocate crece por bloques\n";
+	FrameRig rig(window);
+	const std::vector<std::byte> half(luxel::k_frame_allocation_max_size / 2, std::byte{ 0x11 });
+
+	for (int i = 0; i < 4; ++i)
+	{
+		auto* frame = rig.begin();
+		if (frame == nullptr) { continue; }
+
+		std::vector<luxel::BufferAllocation> allocations;
+		bool threw = false;
+		try {
+			for (int k = 0; k < 6; ++k) {   // 6 x 512 KB = 3 MB
+				allocations.push_back(frame->allocate(half));
+			}
+		}
+		catch (const std::exception& e) {
+			threw = true;
+			std::cout << "  excepcion: " << e.what() << "\n";
+		}
+		CHECK(!threw);
+
+		if (allocations.size() == 6) {
+			// Dos mitades por bloque: (0, 512K), (0, 512K), (0, 512K).
+			CHECK(allocations[0].slot_index == allocations[1].slot_index);
+			CHECK(allocations[2].slot_index == allocations[3].slot_index);
+			CHECK(allocations[4].slot_index == allocations[5].slot_index);
+			CHECK(allocations[0].slot_index != allocations[2].slot_index);
+			CHECK(allocations[2].slot_index != allocations[4].slot_index);
+			CHECK(allocations[0].offset == 0 && allocations[2].offset == 0 && allocations[4].offset == 0);
+			CHECK(allocations[1].offset == half.size());
+		}
+
+		frame->commands().begin_rendering({ .clear = { 0.0f, 0.0f, 0.0f, 1.0f } });
+		frame->commands().end_rendering();
+		rig.end(*frame);
+	}
+}
+
+// 25. Renderer2D con un lote que no cabe en una reserva (R2d): 40.000 quads
+//     se dibujan en 3 draws (16.384 + 16.384 + 7.232), en capas mezcladas, sin
+//     avisos de validacion (mirar la consola tras "[25]"). Y begin/draw_quad/end
+//     fuera de orden lanzan logic_error.
+static void test_renderer2d_big_batch(vitreum::Window& window)
+{
+	std::cout << "[25] Renderer2D: 40.000 quads en 3 draws\n";
+	FrameRig rig(window);
+	luxel::Renderer2D r2d(*rig.device, rig.swapchain->color_format());
+
+	CHECK(luxel::Renderer2D::k_max_quads_per_draw == 16384);
+
+	for (int i = 0; i < 3; ++i)
+	{
+		auto* frame = rig.begin();
+		if (frame == nullptr) { continue; }
+
+		frame->commands().begin_rendering({ .clear = { 0.0f, 0.0f, 0.0f, 1.0f } });
+		r2d.begin(*frame, luxel::math::Matrix4x4::Identity());
+		for (int q = 0; q < 40000; ++q) {
+			r2d.draw_quad({
+				.position = { -1.0f + (q % 200) * 0.01f, -1.0f + (q / 200) * 0.01f },
+				.size     = { 0.008f, 0.008f },
+				.layer    = (q * 7) % 5   // capas mezcladas: obliga a reordenar
+			});
+		}
+		r2d.end();
+		frame->commands().end_rendering();
+		rig.end(*frame);
+
+		CHECK(r2d.last_batch_quad_count() == 40000);
+		CHECK(r2d.last_batch_draw_count() == 3);
+	}
+
+	// Uso fuera de orden.
+	auto expect_logic_error = [](auto&& action) {
+		try { action(); } catch (const std::logic_error&) { return true; }
+		return false;
+	};
+	CHECK(expect_logic_error([&] { r2d.draw_quad({}); }));   // sin begin
+	CHECK(expect_logic_error([&] { r2d.end(); }));           // sin begin
+
+	auto* frame = rig.begin();
+	if (frame != nullptr)
+	{
+		frame->commands().begin_rendering({ .clear = { 0.0f, 0.0f, 0.0f, 1.0f } });
+		r2d.begin(*frame, luxel::math::Matrix4x4::Identity());
+		CHECK(expect_logic_error([&] { r2d.begin(*frame, luxel::math::Matrix4x4::Identity()); }));   // doble begin
+		r2d.end();   // lote vacio: no dibuja nada
+		CHECK(r2d.last_batch_draw_count() == 0);
+		frame->commands().end_rendering();
+		rig.end(*frame);
+	}
+}
+
 int main()
 {
 	test_not_destroyed_immediately();
@@ -937,6 +1050,9 @@ int main()
 	test_many_small_buffers();
 	test_memory_allocator_trim();
 	test_big_upload_trims_staging();
+
+	test_frame_allocate_grows(window);
+	test_renderer2d_big_batch(window);
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;

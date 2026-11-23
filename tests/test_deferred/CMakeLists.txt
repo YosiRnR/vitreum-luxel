@@ -25,7 +25,7 @@ luxel_embed_shaders(test_deferred
 target_link_libraries(test_deferred
     PRIVATE
         vitreum
-        luxel
+        luxel_2d    # Renderer2D (caso 25); arrastra luxel
         Vulkan::Vulkan
 )
 

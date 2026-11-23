@@ -1,0 +1,160 @@
+// Pruebas de la lógica de CPU del lote del Renderer2D (hito R2d), sin GPU:
+//   - stable_order_by_layer: orden por capa, estable, y sin trabajo si ya
+//     venían en orden.
+//   - draw_count / draw_range: troceo de un lote grande en draws.
+//
+// La parte con GPU (que los draws salen bien y sin avisos de validación) está
+// en test_deferred (caso 25) y se ve en test_1.
+
+#include "batch_order.h"
+#include <cstdint>
+#include <iostream>
+#include <vector>
+
+namespace
+{
+	int g_failures = 0;
+
+	void check(bool condition, const char* what, int line)
+	{
+		if (!condition) {
+			++g_failures;
+			std::cout << "  FALLO (linea " << line << "): " << what << "\n";
+		}
+	}
+}
+
+#define CHECK(cond) check((cond), #cond, __LINE__)
+
+using luxel::detail::stable_order_by_layer;
+using luxel::detail::draw_count;
+using luxel::detail::draw_range;
+
+// 1. Ya en orden (todo en la misma capa, o crecientes): no hay que reordenar
+//    y "order" no se toca.
+static void test_already_sorted()
+{
+	std::cout << "[1] capas ya en orden: no se reordena\n";
+	std::vector<uint32_t> order{ 99 };   // centinela: no debe cambiar
+
+	const std::vector<int32_t> same{ 0, 0, 0, 0 };
+	CHECK(!stable_order_by_layer(same, order));
+
+	const std::vector<int32_t> growing{ -3, -1, -1, 0, 5 };
+	CHECK(!stable_order_by_layer(growing, order));
+
+	const std::vector<int32_t> empty{};
+	CHECK(!stable_order_by_layer(empty, order));
+
+	CHECK(order.size() == 1 && order[0] == 99);
+}
+
+// 2. El caso de la escena de Iria: se envía el personaje antes que el fondo.
+//    El fondo (capa -1) debe dibujarse primero.
+static void test_background_sent_late()
+{
+	std::cout << "[2] fondo enviado despues del personaje\n";
+	const std::vector<int32_t> layers{ 0, -1 };   // envío: Iria, fondo
+	std::vector<uint32_t> order;
+
+	CHECK(stable_order_by_layer(layers, order));
+	CHECK((order == std::vector<uint32_t>{ 1, 0 }));   // fondo, Iria
+}
+
+// 3. Estabilidad: a igual capa se respeta el orden de envío.
+static void test_stable()
+{
+	std::cout << "[3] estable: a igual capa, orden de envio\n";
+	//                      envío:  0   1  2   3  4  5
+	const std::vector<int32_t> layers{ 2, 0, 1, 0, 2, 1 };
+	std::vector<uint32_t> order;
+
+	CHECK(stable_order_by_layer(layers, order));
+	// capa 0: envíos 1, 3 | capa 1: envíos 2, 5 | capa 2: envíos 0, 4
+	CHECK((order == std::vector<uint32_t>{ 1, 3, 2, 5, 0, 4 }));
+}
+
+// 4. Capas negativas, extremos de int32 y un vector reutilizado con basura de
+//    una llamada anterior (como hace el Renderer2D entre frames).
+static void test_extremes_and_reuse()
+{
+	std::cout << "[4] extremos de int32 y vector reutilizado\n";
+	std::vector<uint32_t> order{ 7, 7, 7, 7, 7, 7, 7, 7, 7, 7 };   // más largo que el lote
+
+	const std::vector<int32_t> layers{ INT32_MAX, 0, INT32_MIN, -1 };
+	CHECK(stable_order_by_layer(layers, order));
+	CHECK((order == std::vector<uint32_t>{ 2, 3, 1, 0 }));
+}
+
+// 5. Muchos quads: el resultado es una permutación ordenada por capa y estable.
+static void test_many()
+{
+	std::cout << "[5] 40.000 quads en 7 capas\n";
+	constexpr uint32_t n = 40000;
+	std::vector<int32_t> layers(n);
+	for (uint32_t i = 0; i < n; ++i) {
+		layers[i] = static_cast<int32_t>((i * 37) % 7) - 3;   // capas de -3 a 3, mezcladas
+	}
+
+	std::vector<uint32_t> order;
+	CHECK(stable_order_by_layer(layers, order));
+	CHECK(order.size() == n);
+
+	bool sorted_and_stable = true;
+	for (uint32_t i = 1; i < n; ++i)
+	{
+		const int32_t prev = layers[order[i - 1]];
+		const int32_t curr = layers[order[i]];
+		// Capa creciente; a igual capa, índice de envío creciente (estable).
+		if (prev > curr || (prev == curr && order[i - 1] > order[i])) {
+			sorted_and_stable = false;
+			break;
+		}
+	}
+	CHECK(sorted_and_stable);
+}
+
+// 6. Troceo en draws.
+static void test_draw_split()
+{
+	std::cout << "[6] troceo en draws\n";
+	constexpr uint32_t max = 16384;   // lo que usa el Renderer2D (1 MB / 64 bytes)
+
+	CHECK(draw_count(0, max) == 0);
+	CHECK(draw_count(1, max) == 1);
+	CHECK(draw_count(max, max) == 1);       // justo lleno: un draw
+	CHECK(draw_count(max + 1, max) == 2);   // uno más: dos
+	CHECK(draw_count(40000, max) == 3);     // 16384 + 16384 + 7232
+	CHECK(draw_count(10, 0) == 0);          // max 0: no divide por cero
+
+	const auto r0 = draw_range(40000, max, 0);
+	const auto r1 = draw_range(40000, max, 1);
+	const auto r2 = draw_range(40000, max, 2);
+	const auto r3 = draw_range(40000, max, 3);   // fuera: tramo vacío
+	CHECK(r0.first == 0     && r0.count == max);
+	CHECK(r1.first == max   && r1.count == max);
+	CHECK(r2.first == 2 * max && r2.count == 40000 - 2 * max);
+	CHECK(r3.count == 0);
+
+	// Los tramos cubren el lote entero, sin huecos ni solapes.
+	uint32_t covered = 0;
+	for (uint32_t d = 0; d < draw_count(40000, max); ++d) {
+		const auto r = draw_range(40000, max, d);
+		CHECK(r.first == covered);
+		covered += r.count;
+	}
+	CHECK(covered == 40000);
+}
+
+int main()
+{
+	test_already_sorted();
+	test_background_sent_late();
+	test_stable();
+	test_extremes_and_reuse();
+	test_many();
+	test_draw_split();
+
+	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
+	return g_failures == 0 ? 0 : 1;
+}
