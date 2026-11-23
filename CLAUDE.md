@@ -340,6 +340,16 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   Cada `begin_frame` de cada swapchain avanza el frame del device y resetea
   su asignador, así que cada ventana tiene su MB. Las animaciones usan tiempo
   real (`steady_clock`), no un incremento por vuelta.
+  Tercera ventana "Iria" (`SceneKind::Iria`): fondo `forest_00001_.png`
+  ("cover" de la vista) e Iria con `Iria-sprite-sheet.png` (1536x2048, 6x8
+  celdas de 256; correr 0-20, idle 21-33, saltar 34-45; mira a la derecha,
+  fondo transparente) en un ciclo de entrar corriendo, idle, salto (arco con
+  seno durante los fotogramas en el aire) y salir corriendo.
+  `SpriteAnimation` + `animation_cell()`, `sprite_sheet_uv(cell, columnas,
+  filas, ...)` genérica y `load_png_texture()`. `tests/assets/` NO se versiona
+  (imágenes generadas con IA para un juego para la sobrina del usuario; en
+  `.gitignore`). Hoy el fondo va primero por orden de envío: `layer` ya se
+  rellena, pero no se usa hasta R2d.
   Pendiente del hito 8, para más
   adelante: llamar a `trim()` también de forma periódica (p. ej. en
   `begin_frame`) si aparecen más rutas de subida grandes, y asignaciones
