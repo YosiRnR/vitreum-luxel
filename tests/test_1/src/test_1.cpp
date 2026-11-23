@@ -131,7 +131,8 @@ static Scene create_scene(luxel::Device& device, luxel::Format color_format)
 	scene.pipeline = device.create_graphics_pipeline({
 		.vs_byte_code = shader_vs_spv,
 		.ps_byte_code = shader_ps_spv,
-		.format       = color_format
+		.format       = color_format,
+		.blend_mode   = luxel::BlendMode::Alpha
 	});
 
 	//constexpr uint32_t width  = 256;
@@ -142,7 +143,8 @@ static Scene create_scene(luxel::Device& device, luxel::Format color_format)
 	int img_channels{};
 
 	stbi_set_flip_vertically_on_load(1);
-	stbi_uc* data = stbi_load("D:/IriaGameResources/iriaBase01.png", &img_width, &img_height, &img_channels, 4);
+	//stbi_uc* data = stbi_load("D:/IriaGameResources/iriaBase01.png", &img_width, &img_height, &img_channels, 4);
+	stbi_uc* data = stbi_load("D:/IriaGameResources/IriaGame/assets/sprites/Iria-idle-trimmed.png", &img_width, &img_height, &img_channels, 4);
 	if (!data){
 		return{};
 	}
@@ -160,6 +162,8 @@ static Scene create_scene(luxel::Device& device, luxel::Format color_format)
 		.mip_levels   = 1,
 		.initial_data = pixels
 	});
+
+	stbi_image_free(data);
 
 	scene.sampler = device.create_sampler({});
 

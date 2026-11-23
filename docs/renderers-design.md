@@ -91,9 +91,7 @@ La UI se divide en dos partes que no conviene mezclar:
 
 ## Lo que le falta hoy al RHI
 
-- **Blending**: está desactivado (comentado en `vulkan_graphics_pipeline.cpp`).
-  Sin él no hay transparencia: ni sprites con bordes suaves, ni texto, ni UI
-  semitransparente. Hace falta ya para el 2D.
+- ~~**Blending**~~: hecho en R1b.
 - **Profundidad**: no hay depth buffer. Hace falta para el 3D.
 - ~~**Shaders incrustados**~~: hecho en R1a.
 
@@ -107,7 +105,8 @@ La UI se divide en dos partes que no conviene mezclar:
     `span<const uint32_t>` sin casts). Pendiente para R2: función
     `luxel_embed_shaders(target ...)` para separar shaders del motor
     (privados) y de cada test.
-  - R1b: blending configurable en `GraphicsPipelineDescriptor`.
+  - R1b (hecho): blending configurable en `GraphicsPipelineDescriptor` con
+    `BlendMode` (`Opaque`, `Alpha`, `PremultipliedAlpha`, `Additive`).
   - R1c: decidir la convención de Y de `Camera2D` (hoy, con el `orthographic`
     estilo OpenGL, +Y del mundo va hacia abajo en pantalla en Vulkan).
 - **R2. Renderer2D con batching**: quads con color, textura, rotación y capa;

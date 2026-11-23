@@ -864,6 +864,41 @@ static void test_big_upload_trims_staging()
 	}
 }
 
+// 23. Un pipeline por cada BlendMode. test_1 solo usa uno; aqui se crean los
+//     cuatro para que la validacion revise todas las combinaciones de factores.
+//     Un error de validacion no hace fallar el CHECK: sale por consola, asi que
+//     hay que mirar que no aparezca ningun "ERROR"/"WARNING" despues de "[23]".
+static void test_pipeline_blend_modes()
+{
+	std::cout << "[23] un pipeline por cada BlendMode\n";
+	auto device = make_device();
+
+	constexpr luxel::BlendMode modes[] = {
+		luxel::BlendMode::Opaque,
+		luxel::BlendMode::Alpha,
+		luxel::BlendMode::PremultipliedAlpha,
+		luxel::BlendMode::Additive
+	};
+
+	for (const auto mode : modes) {
+		bool created = false;
+		try {
+			auto pipeline = device->create_graphics_pipeline({
+				.vs_byte_code = shader_vs_spv,
+				.ps_byte_code = shader_ps_spv,
+				.format       = luxel::Format::B8G8R8A8_SRGB,
+				.blend_mode   = mode
+			});
+			created = static_cast<bool>(pipeline);
+		}
+		catch (const std::exception& e) {
+			std::cout << "  excepcion: " << e.what() << "\n";
+		}
+		CHECK(created);
+	}
+	CHECK(device->ref_count() == 1);
+}
+
 int main()
 {
 	test_not_destroyed_immediately();
@@ -880,6 +915,7 @@ int main()
 
 	test_descriptor_set_sampler_slots(window);
 	test_pipeline();
+	test_pipeline_blend_modes();
 
 	test_buffer_storage_slot(window);
 	test_buffer_index_no_slot();

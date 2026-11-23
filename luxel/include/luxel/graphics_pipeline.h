@@ -14,6 +14,7 @@ namespace luxel
 
 		Format format{ Format::Undefined };
 		PrimitiveTopology topology{ PrimitiveTopology::TriangleList };
+		BlendMode blend_mode{ BlendMode::Opaque };
 
 		// No sé si compensa string_view o directamente string por valor...con string_view necesito hacer copia local a string para garantizar que la cadena sea null-terminated que es lo que espera luego el pName de Vulkan
 		std::string_view vs_entry_name{ "vs_main" };

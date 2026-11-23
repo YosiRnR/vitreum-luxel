@@ -261,8 +261,20 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   (no existen hasta compilar): es normal. Pendiente para R2: convertir el
   `foreach` en una función `luxel_embed_shaders(target ...)` para que los
   shaders del motor sean privados de luxel y cada test compile los suyos.
-- Siguiente: R1b de `docs/renderers-design.md`, blending configurable en
-  `GraphicsPipelineDescriptor`. Pendiente del hito 8, para más
+- Hecho (R1b, blending): `BlendMode` (`Opaque`, `Alpha`, `PremultipliedAlpha`,
+  `Additive`) en `types.h` y campo `blend_mode` en `GraphicsPipelineDescriptor`
+  (por defecto `Opaque`). Se eligió un enum de modos en vez de exponer los
+  factores (más difícil de usar mal; se ampliará si hace falta).
+  `to_vk_blend()` en `vulkan_graphics_pipeline.cpp` traduce a factores de
+  Vulkan; alfa destino siempre `One` / `OneMinusSrcAlpha` (`One` / `One` en
+  aditivo). El `switch` cubre todos los casos sin `default` para que `-Wswitch`
+  avise si se añade un modo; tras él, `assert`. `test_1` usa `Alpha` con un PNG
+  con transparencia (con `Opaque` lo transparente se ve negro: es el RGB del
+  PNG). Premultiplicado exige premultiplicar la textura al cargarla (los PNG no
+  lo están). Test 23 de `test_deferred`: un pipeline por modo, sin avisos de
+  validación.
+- Siguiente: R1c de `docs/renderers-design.md`, convención de Y de `Camera2D`.
+  Pendiente del hito 8, para más
   adelante: llamar a `trim()` también de forma periódica (p. ej. en
   `begin_frame`) si aparecen más rutas de subida grandes, y asignaciones
   dedicadas si hay recursos enormes de vida larga.

@@ -74,6 +74,14 @@ namespace luxel
 		PointList
 	};
 
+	enum class BlendMode : uint8_t
+	{
+		Opaque,
+		Alpha,
+		PremultipliedAlpha,
+		Additive
+	};
+
 	enum class IndexType : uint8_t
 	{
 		Uint16,

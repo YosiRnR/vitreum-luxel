@@ -3,6 +3,7 @@
 #include <luxel/device.h>
 #include <utility>
 #include <cstdint>
+#include <cassert>
 #include <string>
 #include <array>
 #include <span>
@@ -31,6 +32,50 @@ namespace luxel::vulkan
 				.pCode    = byte_code.data()
 			};
 			return vk::raii::ShaderModule(vk_device->logical_device(), vs_shader_info);
+		}
+
+		vk::PipelineColorBlendAttachmentState to_vk_blend(BlendMode blend_mode)
+		{
+			vk::PipelineColorBlendAttachmentState result{
+				.blendEnable    = blend_mode != BlendMode::Opaque ? vk::True : vk::False,
+				.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+				                  vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
+			};
+			switch (blend_mode)
+			{
+			case BlendMode::Alpha:
+				result.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
+				result.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+				result.colorBlendOp        = vk::BlendOp::eAdd;
+				result.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+				result.dstAlphaBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+				result.alphaBlendOp        = vk::BlendOp::eAdd;
+				return result;
+
+			case BlendMode::PremultipliedAlpha:
+				result.srcColorBlendFactor = vk::BlendFactor::eOne;
+				result.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+				result.colorBlendOp        = vk::BlendOp::eAdd;
+				result.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+				result.dstAlphaBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+				result.alphaBlendOp        = vk::BlendOp::eAdd;
+				return result;
+
+			case BlendMode::Additive:
+				result.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
+				result.dstColorBlendFactor = vk::BlendFactor::eOne;
+				result.colorBlendOp        = vk::BlendOp::eAdd;
+				result.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+				result.dstAlphaBlendFactor = vk::BlendFactor::eOne;
+				result.alphaBlendOp        = vk::BlendOp::eAdd;
+				return result;
+
+			case BlendMode::Opaque:
+				return result;
+			}
+
+			assert(false && "¡¡Warning!! Valor de enumeración de BlendMode no válido");
+			return result;
 		}
 
 	} // namespace
@@ -99,17 +144,7 @@ namespace luxel::vulkan
 		};
 
 		// Color blend
-		vk::PipelineColorBlendAttachmentState color_blend_attachment{
-			.blendEnable         = vk::False,
-			//.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
-			//.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
-			//.colorBlendOp        = vk::BlendOp::eAdd,
-			//.srcAlphaBlendFactor = vk::BlendFactor::eOne,
-			//.dstAlphaBlendFactor = vk::BlendFactor::eZero,
-			//.alphaBlendOp        = vk::BlendOp::eAdd,
-			.colorWriteMask      = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-								   vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
-		};
+		vk::PipelineColorBlendAttachmentState color_blend_attachment{ to_vk_blend(desc.blend_mode) };
 
 		vk::PipelineColorBlendStateCreateInfo color_blend{
 			.logicOpEnable   = vk::False,
