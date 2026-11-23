@@ -56,6 +56,39 @@ otro modo de blending) o de recorte (scissor).
 Orden: los quads se dibujan en el orden de envío, o se ordenan por capa antes
 de subirlos. Con transparencia el orden importa (de atrás hacia delante).
 
+### Decisiones de R2 (acordadas)
+
+1. **Dónde vive**: biblioteca CMake aparte, `luxel_2d`, en el namespace `luxel`,
+   que enlaza con `luxel` como cualquier aplicación. Así el compilador hace
+   cumplir que solo use la API pública (no puede incluir `luxel/src/`).
+2. **Uso**, dentro de `begin_rendering`/`end_rendering` (que siguen siendo de
+   la aplicación):
+   ```cpp
+   Renderer2D r2d(device, swapchain_format);   // pipeline, textura blanca 1x1, sampler
+   r2d.begin(frame, camera.view_proj_matrix());
+   r2d.draw_quad({ .position = {0, 0}, .size = {1, 1}, .texture = tex.get() });
+   r2d.end();                                   // ordena, copia y dibuja
+   ```
+   `begin` recibe una **matriz**, no una `Camera2D`: la UI le pasará su
+   proyección en píxeles.
+3. **`draw_quad(const Quad&)`**: struct con valores por defecto y designated
+   initializers: `position` (centro), `size`, `rotation` (radianes,
+   antihorario), `color`, `texture` (`nullptr` = textura blanca, es decir,
+   color liso), `uv_min`/`uv_max`, `layer`.
+4. **Registro en GPU (`QuadInstance`, 64 bytes)**: `float2 position`,
+   `float2 size`, `float2 uv_min`, `float2 uv_max`, `float4 color`,
+   `float rotation`, `uint texture_index`, `uint2` de relleno. Las esquinas se
+   calculan en el vertex shader. La capa no va a la GPU (solo ordena en CPU).
+   `static_assert(sizeof(QuadInstance) == 64)` para no desincronizarse del HLSL.
+   El color en `float4` por sencillez (empaquetar en RGBA8 queda como mejora).
+5. **Push constants**: la matriz `view_proj` (64 bytes) + slot y offset de las
+   instancias = 72 de 128 bytes. La matriz no pasa por `Frame::allocate`.
+6. **Orden**: `std::stable_sort` por `layer` en `end()`; dentro de una capa se
+   respeta el orden de envío.
+
+Límite: el asignador por frame tiene 1 MB, unos 16.000 quads de 64 bytes; si
+no caben, `end()` parte el lote en varios `draw` (R2d).
+
 ## UI
 
 La UI se divide en dos partes que no conviene mezclar:
@@ -102,7 +135,7 @@ La UI se divide en dos partes que no conviene mezclar:
     `luxel/CMakeLists.txt`: `.hlsl` -> `dxc` -> `.spv` ->
     `cmake/embed_spirv.cmake` -> `<nombre>_spv.h` con un
     `constexpr std::uint32_t[]` (alineado a 4, encaja con
-    `span<const uint32_t>` sin casts). Pendiente para R2: función
+    `span<const uint32_t>` sin casts). Desde R2a, función
     `luxel_embed_shaders(target ...)` para separar shaders del motor
     (privados) y de cada test.
   - R1b (hecho): blending configurable en `GraphicsPipelineDescriptor` con
@@ -114,7 +147,16 @@ La UI se divide en dos partes que no conviene mezclar:
     para R5: `frontFace` con el viewport invertido y rango de Z [0, 1].
 - **R2. Renderer2D con batching**: quads con color, textura, rotación y capa;
   un draw por lote. Primer resultado visible; usa asignador por frame,
-  bindless y cámara.
+  bindless y cámara. Diseño en "Decisiones de R2".
+  - R2a (hecho): función CMake `luxel_embed_shaders(<target> <.hlsl...>)`
+    (`luxel/cmake/luxel_shaders.cmake`); cada target
+    compila e incrusta sus propios shaders (los de `test_1` y `test_deferred`
+    pasan a `tests/shaders/`; `luxel` se queda sin shaders).
+  - R2b: target `luxel_2d` y `Renderer2D` con `begin`/`draw_quad`/`end`, solo
+    color (textura blanca) y sin rotación; un rectángulo en `test_1`.
+  - R2c: textura, UVs y rotación; ~10.000 quads en `test_1`.
+  - R2d: orden por capa y lotes partidos si no caben; test sin GPU de la parte
+    de CPU.
 - **R3. Texto**: primero fuente bitmap (imagen con los caracteres en rejilla);
   más adelante, rasterizar TTF a mano (hito de aprendizaje, como el PNG).
 - **R4. Primitivas de UI**: rectángulos redondeados con SDF, bordes, recorte.

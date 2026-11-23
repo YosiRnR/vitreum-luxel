@@ -258,9 +258,8 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   `test_deferred` incluyen esa carpeta (adiós a `LUXEL_SHADER_DIR` y a leer de
   disco) y pasan el array directamente como `span<const uint32_t>`.
   IntelliSense marca las cabeceras en las configuraciones aún no compiladas
-  (no existen hasta compilar): es normal. Pendiente para R2: convertir el
-  `foreach` en una función `luxel_embed_shaders(target ...)` para que los
-  shaders del motor sean privados de luxel y cada test compile los suyos.
+  (no existen hasta compilar): es normal. (El `foreach` y `compile_shaders`
+  se sustituyeron en R2a por `luxel_embed_shaders`.)
 - Hecho (R1b, blending): `BlendMode` (`Opaque`, `Alpha`, `PremultipliedAlpha`,
   `Additive`) en `types.h` y campo `blend_mode` en `GraphicsPipelineDescriptor`
   (por defecto `Opaque`). Se eligió un enum de modos en vez de exponer los
@@ -287,7 +286,24 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   [-1, 1] (OpenGL) mientras Vulkan/D3D usan [0, 1]. `tests/test_cameras`
   (caja negra, solo API pública, sin GPU): esquinas y centro en ambos sentidos,
   +Y arriba, posición, zoom, ida y vuelta con rotación y `rotateZ` antihorario.
-- Siguiente: R2 de `docs/renderers-design.md`, `Renderer2D` con batching.
+- En curso: R2 de `docs/renderers-design.md`, `Renderer2D` con batching.
+  Diseño acordado (sección "Decisiones de R2"): biblioteca aparte `luxel_2d`
+  (solo API pública), `begin(frame, view_proj)` / `draw_quad(const Quad&)` /
+  `end()` dentro de `begin_rendering`, `QuadInstance` de 64 bytes con las
+  esquinas calculadas en el VS, `view_proj` en push constants, `stable_sort`
+  por capa. Sub-hitos R2a-R2d.
+  R2a hecho: `luxel/cmake/luxel_shaders.cmake` (cargado con `include()` desde
+  `luxel/CMakeLists.txt`) define `luxel_embed_shaders(<target> <.hlsl...>)`:
+  por cada `*_vs.hlsl`/`*_ps.hlsl`, las dos recetas (`dxc` -> `.spv` ->
+  `embed_spirv.cmake` -> `<nombre>_spv.h`) en
+  `<build de quien llama>/<target>_shaders/`, cabeceras añadidas como fuentes
+  del target (eso dispara las recetas; sustituye a `compile_shaders`) e
+  include PRIVADO. Los `.hlsl` se añaden con `HEADER_FILE_ONLY` (que el
+  generador de VS no los pase a fxc). La ruta del script se guarda al cargar
+  el fichero (dentro de la función `CMAKE_CURRENT_LIST_DIR` sería la de quien
+  llama). `luxel` ya no tiene shaders; los de `test_1` y `test_deferred` están
+  en `tests/shaders/` y cada test los compila aparte. Limitación: no se siguen
+  los `#include` de los `.hlsl` (si aparecen, usar `DEPFILE` de dxc).
   Pendiente del hito 8, para más
   adelante: llamar a `trim()` también de forma periódica (p. ej. en
   `begin_frame`) si aparecen más rutas de subida grandes, y asignaciones
