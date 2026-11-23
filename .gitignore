@@ -13,3 +13,6 @@ build/
 
 # Shaders compilados (se versionan solo los .hlsl)
 *.spv
+
+# Recursos de los tests (imágenes generadas, fondos...): de momento no se versionan
+tests/assets/
