@@ -3,6 +3,7 @@ project(Librerias_workspace NONE)
 
 add_subdirectory(vitreum)
 add_subdirectory(luxel)
+add_subdirectory(luxel_2d)   # después de luxel: usa su función luxel_embed_shaders
 add_subdirectory(tests/test_1)
 add_subdirectory(tests/test_deferred)
 add_subdirectory(tests/test_free)

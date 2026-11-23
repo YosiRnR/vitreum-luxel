@@ -1,5 +1,6 @@
 #include <vitreum/vitreum.h>
 #include <luxel/luxel.h>
+#include <luxel/renderer2d.h>
 #include <stdexcept>
 #include <iostream>
 #include <algorithm>
@@ -12,8 +13,6 @@
 #include <span>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-#include "shader_vs_spv.h"
-#include "shader_ps_spv.h"
 
 
 static luxel::WindowHandle to_luxel(const vitreum::NativeWindowHandle& win_handle)
@@ -92,15 +91,12 @@ struct RenderWindow
 	luxel::Size2D last_extent{};        // Para avisar solo cuando cambia el tamaño de la swapchain
 };
 
-// Recursos que se dibujan en todas las ventanas.
+// Recursos que se dibujan en todas las ventanas. El pipeline, los shaders y el
+// sampler ya no son cosa de la aplicación: los pone el Renderer2D.
 struct Scene
 {
-	luxel::Ref<luxel::GraphicsPipeline> pipeline;
-	luxel::Ref<luxel::Texture> texture;
-	luxel::Ref<luxel::Sampler> sampler;
-	luxel::Ref<luxel::Buffer> vertex_buffer;
-	luxel::Ref<luxel::Buffer> index_buffer;
-	uint32_t index_count{};
+	luxel::Ref<luxel::Texture> texture;   // puede quedar vacía si no se encuentra el PNG
+	float texture_aspect{ 1.0f };         // ancho / alto de la imagen, para no deformarla
 };
 
 // vitreum::Window no se puede mover, por eso las ventanas viven en unique_ptr.
@@ -122,18 +118,9 @@ static std::unique_ptr<RenderWindow> make_render_window(luxel::Device& device, c
 	return render_window;
 }
 
-static Scene create_scene(luxel::Device& device, luxel::Format color_format)
+static Scene create_scene(luxel::Device& device)
 {
 	Scene scene;
-
-	// El pipeline se crea para un formato de color: sirve para las ventanas cuya
-	// swapchain use ese mismo formato (aquí, todas).
-	scene.pipeline = device.create_graphics_pipeline({
-		.vs_byte_code = shader_vs_spv,
-		.ps_byte_code = shader_ps_spv,
-		.format       = color_format,
-		.blend_mode   = luxel::BlendMode::Alpha
-	});
 
 	//constexpr uint32_t width  = 256;
 	//constexpr uint32_t height = 256;
@@ -146,6 +133,7 @@ static Scene create_scene(luxel::Device& device, luxel::Format color_format)
 	stbi_uc* data = stbi_load("D:/IriaGameResources/iriaBase01.png", &img_width, &img_height, &img_channels, 4);
 	//stbi_uc* data = stbi_load("D:/IriaGameResources/IriaGame/assets/sprites/Iria-idle-trimmed.png", &img_width, &img_height, &img_channels, 4);
 	if (!data){
+		std::cout << "No se encontró el PNG: el sprite se dibujará como un cuadrado blanco\n";
 		return{};
 	}
 	const size_t byte_count = static_cast<size_t>(img_width) * static_cast<size_t>(img_height) * 4;
@@ -165,20 +153,7 @@ static Scene create_scene(luxel::Device& device, luxel::Format color_format)
 
 	stbi_image_free(data);
 
-	scene.sampler = device.create_sampler({});
-
-	const std::array<float, 16> vertices{
-		// posición      // UV
-		-0.5f, -0.5f,    0.0f, 1.0f, // abajo izquierda
-		 0.5f, -0.5f,    1.0f, 1.0f, // abajo derecha
-		 0.5f,  0.5f,    1.0f, 0.0f, // arriba derecha
-		-0.5f,  0.5f,    0.0f, 0.0f  // arriba izquierda
-	};
-	scene.vertex_buffer = device.create_buffer(luxel::BufferDescriptor::from_data(vertices, luxel::BufferUsage::Storage));
-
-	const std::array<uint16_t, 6> indices{ 0, 1, 2, 0, 2, 3 };
-	scene.index_buffer = device.create_buffer(luxel::BufferDescriptor::from_data(indices, luxel::BufferUsage::Index));
-	scene.index_count  = static_cast<uint32_t>(indices.size());
+	scene.texture_aspect = static_cast<float>(width) / static_cast<float>(height);
 
 	return scene;
 }
@@ -214,7 +189,8 @@ static void process_events(RenderWindow& render_window)
 
 // Un frame completo en una ventana. Si no se puede pintar (swapchain obsoleta o
 // recreándose) simplemente no hace nada: ya se volverá a intentar en la vuelta siguiente.
-static void render_window_frame(luxel::Device& device, RenderWindow& render_window, const Scene& scene, float angle)
+static void render_window_frame(luxel::Device& device, luxel::Renderer2D& r2d, RenderWindow& render_window,
+                                const Scene& scene, float angle)
 {
 	auto* frame = device.begin_frame(*render_window.swapchain);
 	if (frame == nullptr) {
@@ -229,20 +205,48 @@ static void render_window_frame(luxel::Device& device, RenderWindow& render_wind
 	const float aspect = extent.height > 0 ? static_cast<float>(extent.width) / static_cast<float>(extent.height) : 1.0f;
 	render_window.camera.set_viewport_size(2.0f * aspect, 2.0f);
 
-	// proyección * vista * modelo: el giro ocurre en unidades del mundo y la proyección lo ajusta a la ventana.
-	const auto xform_matrix = render_window.camera.view_proj_matrix() * luxel::math::Matrix4x4::rotateZ(angle);
-	auto buf_alloc = frame->allocate(std::as_bytes(std::span(xform_matrix.m)));
-	const std::array<uint32_t, 5> push_constants{
-		scene.vertex_buffer->bindless_index(), buf_alloc.slot_index, buf_alloc.offset,
-		scene.texture->bindless_index(), scene.sampler->bindless_index()
-	};
-
 	auto& commands = frame->commands();
 	commands.begin_rendering({ .clear = render_window.clear });
-	commands.bind_constants(std::as_bytes(std::span(push_constants)));
-	commands.bind_index_buffer(*scene.index_buffer, luxel::IndexType::Uint16);
-	commands.bind_pipeline(*scene.pipeline);
-	commands.draw_indexed(scene.index_count);
+
+	// Todo lo que va entre begin() y end() es UN lote: un solo draw.
+	r2d.begin(*frame, render_window.camera.view_proj_matrix());
+
+	// Fila de rectángulos de color liso (sin textura => textura blanca del
+	// renderer) en la parte de abajo, de izquierda a derecha.
+	const std::array<luxel::Color, 5> colors{ {
+		{ 1.0f, 0.2f, 0.2f, 1.0f },
+		{ 1.0f, 0.8f, 0.1f, 1.0f },
+		{ 0.2f, 0.9f, 0.3f, 1.0f },
+		{ 0.2f, 0.5f, 1.0f, 1.0f },
+		{ 0.8f, 0.3f, 1.0f, 1.0f },
+	} };
+	for (size_t i = 0; i < colors.size(); ++i) {
+		r2d.draw_quad({
+			.position = { -1.0f + 0.5f * static_cast<float>(i), -0.75f },
+			.size     = { 0.4f, 0.2f },
+			.color    = colors[i]
+		});
+	}
+
+	// El sprite, girando en el centro y con el ancho ajustado a la imagen.
+	// En el mismo lote que los rectángulos aunque use otra textura (bindless).
+	r2d.draw_quad({
+		.position = { 0.0f, 0.1f },
+		.size     = { 1.0f * scene.texture_aspect, 1.0f },
+		.rotation = angle,
+		.texture  = scene.texture.get()   // nullptr si no se cargó el PNG => cuadrado blanco
+	});
+
+	// Rectángulo blanco semitransparente por ENCIMA (se dibuja después): prueba
+	// el blending Alpha del renderer sobre el sprite y el fondo.
+	r2d.draw_quad({
+		.position = { 0.6f, 0.4f },
+		.size     = { 0.5f, 0.5f },
+		.color    = { 1.0f, 1.0f, 1.0f, 0.5f }
+	});
+
+	r2d.end();
+
 	commands.end_rendering();
 
 	device.end_frame(*frame);
@@ -271,7 +275,12 @@ int main(int argc, char** argv)
 	std::cout << std::format("      Extent: {} x {}\n", extent.width, extent.height);
 	std::cout << std::format("Color Format: {}\n", static_cast<uint8_t>(color_format));
 
-	Scene scene = create_scene(*render_device, color_format);
+	Scene scene = create_scene(*render_device);
+
+	// Un Renderer2D para todas las ventanas: su pipeline sirve para cualquier
+	// swapchain con este formato de color (aquí, todas). Cada ventana abre y
+	// cierra su propio lote en su frame.
+	luxel::Renderer2D r2d(*render_device, color_format);
 
 	for (auto& render_window : windows) {
 		render_window->window.show();
@@ -307,7 +316,7 @@ int main(int argc, char** argv)
 		for (auto& render_window : windows)
 		{
 			if (!render_window->window.is_minimized()) {
-				render_window_frame(*render_device, *render_window, scene, angle);
+				render_window_frame(*render_device, r2d, *render_window, scene, angle);
 			}
 		}
 	}
