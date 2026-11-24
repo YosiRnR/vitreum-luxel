@@ -219,7 +219,8 @@ La UI se divide en dos partes que no conviene mezclar:
   input.
   - R4a (hecho): `begin_ui` (lote en píxeles, +Y abajo) y `draw_text` en ese
     espacio. El HUD de Iria pasa a píxeles.
-  - R4b: tabla de estilos y `draw_rounded_rect` con radio (SDF).
+  - R4b (hecho): tabla de estilos y `draw_rounded_rect` con radio (SDF). El
+    registro de estilo empieza en 16 bytes y crece con R4c (32) y R4d (48).
   - R4c: borde con grosor y color, también con relleno transparente.
   - R4d: recorte con pila; demo con una lista que se desplaza en un panel.
 - **R5. 3D**: depth buffer, `Mesh`, materiales, una luz direccional. Después,

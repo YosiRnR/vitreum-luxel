@@ -414,10 +414,10 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   Iria: "¡Hola, Iria!", controles y el estado (`IriaController::state_label()`)
   alineado a la derecha con `measure`, con sombra (capa 1) bajo el texto (capa
   2); 102 quads en 1 draw. `test_renderer2d` caso 7: UTF-8. Pendiente: sin
-  kerning; sin mipmaps (fuente de 48 px muy reducida puede parpadear); la cola
-  de la 'j' se mete en la celda de la 'i' del atlas de GDI (raya fina a la
-  derecha de cada 'i': el `padding` de 2 px se queda corto); rasterizar TTF a
-  mano sigue como hito de aprendizaje.
+  kerning; sin mipmaps (fuente de 48 px muy reducida puede parpadear);
+  rasterizar TTF a mano sigue como hito de aprendizaje. (Corregido después: el
+  `padding` del atlas pasó de 2 a 4 px; con 2, la cola de la 'j', que sobresale
+  3 px a la izquierda, se metía en la celda de la 'i'.)
 - En curso: R4 de `docs/renderers-design.md`, primitivas de UI del `Renderer2D`
   (rectángulos redondeados con SDF, bordes y recorte; la librería de widgets va
   después). Diseño acordado (sección "Decisiones de R4"), sub-hitos R4a-R4d.
@@ -435,8 +435,23 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   comprobar UV y giro. Tests: `test_renderer2d` 8 y 9 (ahora también ve
   `luxel/include` por las matemáticas) y `test_deferred` 26 (mundo + UI en el
   mismo frame).
-- Siguiente: R4b, tabla de estilos y `draw_rounded_rect` con radio (la función
-  SDF del pixel shader se le ofrece al usuario).
+  R4b hecho (rectángulos redondeados; la SDF, `sd_rounded_box` en
+  `quad_ps.hlsl`, la escribió el usuario): `RoundedRect` y
+  `Renderer2D::draw_rounded_rect` (por `top_left`, sin giro, radio limitado a la
+  mitad del lado corto). El relleno de `QuadInstance` es ahora `style_index`
+  (0 = sin estilo; siguen siendo 64 bytes y 16.384 por draw) y `StyleRecord`
+  (privado, en el `.cpp`) mide 16 bytes (radio + relleno; crecerá de 16 en 16).
+  `luxel_2d/src/style_table.h` (solo std): `add_style` (números desde 1,
+  reutiliza el último si es igual) y `compact_styles` (en `end()`, por draw:
+  deja solo los estilos que usan sus quads y los renumera, así su tabla cabe
+  siempre en una reserva). Push constants: 84 bytes (`styles_slot`,
+  `styles_offset`), declaradas igual en el VS y el PS. El VS pasa `local` (sin
+  girar), `half_size` y `style_index`; el PS lee el estilo del buffer y hace
+  `alfa *= saturate(0.5 - d / units_per_pixel)`, con las derivadas fuera del
+  `if`. `test_1`: panel con tres botones (radios 4, 14 y cápsula) en el HUD de
+  Iria. Tests: `test_renderer2d` 10 y 11, `test_deferred` 27 (40.000 mezclados
+  = 3 draws con su tabla).
+- Siguiente: R4c, borde con grosor y color (también con relleno transparente).
 - Entorno de compilación (para el asistente): desde Git Bash, cargar
   `vcvars64.bat` de VS 2026 (`C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Auxiliary\Build`)
   y `cmake --build out/build/clangcl-debug`. No hay presets de build, solo de
