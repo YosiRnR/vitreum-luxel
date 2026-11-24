@@ -7,12 +7,15 @@ add_executable(test_1
     "src/stb_image.h"
     "src/keyboard_state.h"
     "src/iria_controller.h"
+    "src/gdi_font_atlas.h"
+    "src/gdi_font_atlas.cpp"
 )
 
 target_link_libraries(test_1
     PRIVATE
         vitreum
         luxel_2d    # arrastra luxel (lo enlaza como PUBLIC)
+        gdi32       # GDI de Win32: genera el atlas de la fuente (gdi_font_atlas.cpp)
 )
 
 target_compile_features(test_1 PRIVATE cxx_std_20)

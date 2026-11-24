@@ -1,5 +1,6 @@
 #include <luxel/renderer2d.h>
 #include "batch_order.h"
+#include "utf8.h"
 
 #include <array>
 #include <cstddef>
@@ -170,6 +171,53 @@ namespace luxel
 		});
 		// La capa no va a la GPU: solo sirve para ordenar en end().
 		m_layers.push_back(quad.layer);
+	}
+
+	void Renderer2D::draw_text(const BitmapFont& font, std::u8string_view text, math::Vector2f top_left,
+	                           float size, Color color, int32_t layer)
+	{
+		// Escala: píxeles de la fuente -> unidades del mundo. size es el alto de
+		// una línea, así que una línea de la fuente (line_height px) mide "size".
+		const float scale  = size / font.line_height();
+		const float cell_w = font.cell_width() * scale;
+		const float cell_h = font.cell_height() * scale;
+		const float pad    = font.padding() * scale;
+
+		// El "lápiz": dónde empieza la letra siguiente (arriba a la izquierda).
+		math::Vector2f pen = top_left;
+
+		for (std::size_t i = 0; i < text.size();)
+		{
+			const char32_t cp = detail::next_codepoint(text, i);
+
+			if (cp == U'\n') {
+				pen.x = top_left.x;
+				pen.y -= size;   // +Y arriba: la línea siguiente va más abajo
+				continue;
+			}
+
+			const BitmapFont::Glyph& glyph = font.glyph(cp);
+
+			// El espacio no se dibuja (sería una celda transparente): solo avanza.
+			if (cp != U' ')
+			{
+				// La celda entera es el quad. El glifo empieza "pad" dentro de la
+				// celda, así que la celda se coloca pad a la izquierda y pad arriba
+				// del lápiz. position es el CENTRO del quad.
+				const float cell_left = pen.x - pad;
+				const float cell_top  = pen.y + pad;
+				draw_quad({
+					.position = { cell_left + cell_w * 0.5f, cell_top - cell_h * 0.5f },
+					.size     = { cell_w, cell_h },
+					.color    = color,
+					.texture  = &font.texture(),
+					.uv_min   = glyph.uv_min,
+					.uv_max   = glyph.uv_max,
+					.layer    = layer
+				});
+			}
+			pen.x += glyph.advance * scale;
+		}
 	}
 
 	void Renderer2D::end()

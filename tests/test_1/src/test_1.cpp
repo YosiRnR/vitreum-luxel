@@ -18,6 +18,7 @@
 #include "stb_image.h"
 #include "keyboard_state.h"
 #include "iria_controller.h"
+#include "gdi_font_atlas.h"
 
 
 static luxel::WindowHandle to_luxel(const vitreum::NativeWindowHandle& win_handle)
@@ -130,6 +131,10 @@ struct Scene
 	luxel::Ref<luxel::Texture> iria_sheet;      // tests/assets/Iria-sprite-sheet.png (ver k_iria_*)
 	luxel::Ref<luxel::Texture> background;      // tests/assets/forest_00001_.png
 	float background_aspect{ 1.0f };
+
+	// Fuente para el HUD, con el atlas generado por GDI al arrancar. unique_ptr
+	// porque BitmapFont no tiene constructor por defecto (y Scene sí lo necesita).
+	std::unique_ptr<luxel::BitmapFont> font;
 };
 
 // Hoja de sprites de prueba: 4x4 celdas de 8x8 píxeles (textura de 32x32).
@@ -282,6 +287,24 @@ static Scene create_scene(luxel::Device& device)
 	scene.texture    = load_png_texture(device, "iriaBase01.png", &scene.texture_aspect);
 	scene.iria_sheet = load_png_texture(device, "Iria-sprite-sheet.png");
 	scene.background = load_png_texture(device, "forest_00001_.png", &scene.background_aspect);
+
+	// Atlas de la fuente: Segoe UI en negrita, 48 px, Latin-1 (32-255). Se
+	// genera grande y se escala hacia abajo al dibujar (queda nítido a casi
+	// cualquier tamaño de HUD). El atlas solo hace falta para crear la fuente:
+	// create_texture lo sube a la GPU y después ya se puede tirar.
+	const FontAtlasImage atlas = make_gdi_font_atlas(L"Segoe UI", 48, true);
+	scene.font = std::make_unique<luxel::BitmapFont>(device, luxel::BitmapFontDescriptor{
+		.atlas_width     = atlas.width,
+		.atlas_height    = atlas.height,
+		.atlas_pixels    = atlas.pixels,
+		.cell_width      = atlas.cell_width,
+		.cell_height     = atlas.cell_height,
+		.columns         = atlas.columns,
+		.padding         = atlas.padding,
+		.first_codepoint = atlas.first_codepoint,
+		.advances        = atlas.advances,
+		.line_height     = atlas.line_height
+	});
 
 	return scene;
 }
@@ -458,6 +481,34 @@ static void draw_iria_scene(luxel::Renderer2D& r2d, const Scene& scene, const Ir
 		.texture  = scene.background.get(),
 		.layer    = -1   // detrás de Iria (capa 0), aunque se envíe después
 	});
+
+	// --- Texto (HUD) ---------------------------------------------------------------
+	// Todo en el mismo lote que Iria y el fondo: cada letra es un quad más.
+	// Capas: sombra 1 y texto 2, por encima de todo lo demás.
+	if (!scene.font) {
+		return;
+	}
+	const luxel::BitmapFont& font = *scene.font;
+	const float margin = 0.06f;
+	const float left   = -view_width * 0.5f + margin;
+	const float top    = 1.0f - margin;
+
+	// Texto con una sombra: el mismo texto, negro semitransparente y un poco
+	// desplazado abajo a la derecha, en una capa por debajo.
+	const auto shadowed_text = [&](std::u8string_view text, luxel::math::Vector2f top_left, float size, luxel::Color color) {
+		const float offset = size * 0.05f;
+		r2d.draw_text(font, text, { top_left.x + offset, top_left.y - offset }, size, { 0.0f, 0.0f, 0.0f, 0.55f }, 1);
+		r2d.draw_text(font, text, top_left, size, color, 2);
+	};
+
+	shadowed_text(u8"¡Hola, Iria!", { left, top }, 0.22f, { 1.0f, 0.85f, 0.35f, 1.0f });
+	shadowed_text(u8"Flechas o A/D: correr · Espacio: saltar", { left, top - 0.26f }, 0.09f, { 1.0f, 1.0f, 1.0f, 1.0f });
+
+	// Estado, alineado a la derecha con measure(): ancho en píxeles * escala.
+	const float state_size  = 0.12f;
+	const float state_width = font.measure(iria.state_label()) * (state_size / font.line_height());
+	shadowed_text(iria.state_label(), { view_width * 0.5f - margin - state_width, top }, state_size,
+	              { 0.75f, 1.0f, 0.75f, 1.0f });
 }
 
 // Promedia el tiempo de CPU del lote y lo pone en el título cada medio segundo.

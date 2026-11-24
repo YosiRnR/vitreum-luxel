@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <string_view>
 
 // Controlador de Iria: lógica de juego (movimiento, gravedad, salto y qué
 // fotograma de la hoja toca). No sabe nada de render ni de teclado: recibe
@@ -136,6 +137,19 @@ public:
 		}
 
 		m_x = std::clamp(m_x, min_x, max_x);
+	}
+
+	// Nombre del estado, para mostrarlo en pantalla (UTF-8).
+	std::u8string_view state_label() const
+	{
+		switch (m_state)
+		{
+		case State::Ground: return m_moving ? u8"Corriendo" : u8"Quieta";
+		case State::Crouch: return u8"¡Preparada!";
+		case State::Air:    return u8"¡Saltando!";
+		case State::Land:   return u8"Aterrizando";
+		}
+		return u8"";
 	}
 
 	float x() const { return m_x; }

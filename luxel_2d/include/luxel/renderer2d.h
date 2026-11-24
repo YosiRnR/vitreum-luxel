@@ -6,9 +6,11 @@
 // Solo usa la API pública de luxel: es una biblioteca aparte (luxel_2d).
 
 #include <luxel/device.h>
+#include <luxel/bitmap_font.h>
 #include <luxel/math/vectors.h>
 #include <luxel/math/matrix4.h>
 #include <cstdint>
+#include <string_view>
 #include <vector>
 
 namespace luxel
@@ -73,6 +75,17 @@ namespace luxel
 
 		// Añade un quad al lote. No toca la GPU: solo escribe en un vector en CPU.
 		void draw_quad(const Quad& quad);
+
+		// Añade un texto (UTF-8) al lote: un quad por letra, con la textura del
+		// atlas de la fuente. Las letras van en el MISMO lote que el resto
+		// (bindless), así que un HUD no cuesta draws extra.
+		//   top_left: esquina de arriba a la izquierda de la primera línea, en el mundo.
+		//   size:     alto de una línea en unidades del mundo (la escala de la fuente).
+		// '\n' empieza una línea nueva debajo (el mundo tiene +Y arriba).
+		// Ojo: guarda el índice bindless del atlas, así que la fuente debe vivir
+		// hasta que se dibuje el frame (como cualquier textura).
+		void draw_text(const BitmapFont& font, std::u8string_view text, math::Vector2f top_left, float size,
+		               Color color = {}, int32_t layer = 0);
 
 		// Cierra el lote: ordena los quads por capa (estable), los copia a memoria
 		// de GPU (Frame::allocate) y los dibuja. Un draw por cada

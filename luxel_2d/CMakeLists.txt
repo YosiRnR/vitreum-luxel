@@ -14,6 +14,10 @@ project(luxel_2d LANGUAGES CXX)
 add_library(luxel_2d STATIC
     "include/luxel/renderer2d.h"
     "src/renderer2d.cpp"
+    "include/luxel/bitmap_font.h"
+    "src/bitmap_font.cpp"
+    "src/batch_order.h"
+    "src/utf8.h"
 )
 
 # Shaders del Renderer2D, incrustados como cabeceras (quad_vs_spv.h y

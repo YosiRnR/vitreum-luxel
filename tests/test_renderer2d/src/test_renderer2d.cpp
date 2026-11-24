@@ -7,8 +7,12 @@
 // en test_deferred (caso 25) y se ve en test_1.
 
 #include "batch_order.h"
+#include "utf8.h"
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace
@@ -146,6 +150,38 @@ static void test_draw_split()
 	CHECK(covered == 40000);
 }
 
+// 7. Decodificador UTF-8 de draw_text (R3).
+static std::u32string decode(std::u8string_view text)
+{
+	std::u32string out;
+	for (std::size_t i = 0; i < text.size();) {
+		out.push_back(luxel::detail::next_codepoint(text, i));
+	}
+	return out;
+}
+
+static void test_utf8()
+{
+	std::cout << "[7] UTF-8: ASCII, 2, 3 y 4 bytes, y secuencias rotas\n";
+	using luxel::detail::k_replacement_char;
+
+	CHECK(decode(u8"Iria") == U"Iria");
+	CHECK(decode(u8"¡Hola, Iria!") == U"¡Hola, Iria!");     // ¡ = U+00A1 (2 bytes)
+	CHECK(decode(u8"ñÑüç") == U"ñÑüç");
+	CHECK(decode(u8"€") == U"€");                            // U+20AC (3 bytes)
+	CHECK(decode(u8"\U0001F642") == U"\U0001F642");          // emoji (4 bytes)
+
+	// Secuencias mal formadas: U+FFFD y se sigue con lo de detrás.
+	const char8_t lone_continuation[] = { 0x80, u8'a', 0 };          // 10xxxxxx suelto
+	const char8_t cut_at_end[]        = { u8'a', 0xC3, 0 };          // empieza 'ñ' pero se corta
+	const char8_t overlong[]          = { 0xC0, 0x80, u8'b', 0 };    // '\0' en 2 bytes (prohibido)
+	const char8_t bad_continuation[]  = { 0xE2, u8'x', u8'y', 0 };   // 3 bytes, el 2º no es 10xxxxxx
+	CHECK(decode(lone_continuation) == (std::u32string{ k_replacement_char, U'a' }));
+	CHECK(decode(cut_at_end) == (std::u32string{ U'a', k_replacement_char }));
+	CHECK(decode(overlong) == (std::u32string{ k_replacement_char, k_replacement_char, U'b' }));
+	CHECK(decode(bad_continuation) == (std::u32string{ k_replacement_char, U'x', U'y' }));
+}
+
 int main()
 {
 	test_already_sorted();
@@ -154,6 +190,7 @@ int main()
 	test_extremes_and_reuse();
 	test_many();
 	test_draw_split();
+	test_utf8();
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;
