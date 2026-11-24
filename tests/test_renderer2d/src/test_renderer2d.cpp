@@ -2,11 +2,13 @@
 //   - stable_order_by_layer: orden por capa, estable, y sin trabajo si ya
 //     venían en orden.
 //   - draw_count / draw_range: troceo de un lote grande en draws.
+//   - ui_space.h: proyección en píxeles y sitio de cada letra (hito R4a).
 //
 // La parte con GPU (que los draws salen bien y sin avisos de validación) está
 // en test_deferred (caso 25) y se ve en test_1.
 
 #include "batch_order.h"
+#include "ui_space.h"
 #include "utf8.h"
 #include <cstddef>
 #include <cstdint>
@@ -182,6 +184,39 @@ static void test_utf8()
 	CHECK(decode(bad_continuation) == (std::u32string{ k_replacement_char, U'x', U'y' }));
 }
 
+// 8. Proyección de la UI (R4a): (0,0) arriba a la izquierda y +Y abajo. En el
+//    NDC de luxel (+Y arriba), arriba a la izquierda es (-1, +1).
+static void test_ui_projection()
+{
+	std::cout << "[8] UI: proyeccion en pixeles\n";
+	const auto m = luxel::detail::ui_projection(1280.0f, 720.0f);
+	const auto ndc = [&](float x, float y) { return m.TransformPoint({ x, y }); };
+
+	CHECK(ndc(0.0f, 0.0f).nearlyEquals({ -1.0f, 1.0f }));        // arriba izquierda
+	CHECK(ndc(1280.0f, 0.0f).nearlyEquals({ 1.0f, 1.0f }));      // arriba derecha
+	CHECK(ndc(0.0f, 720.0f).nearlyEquals({ -1.0f, -1.0f }));     // abajo izquierda
+	CHECK(ndc(1280.0f, 720.0f).nearlyEquals({ 1.0f, -1.0f }));   // abajo derecha
+	CHECK(ndc(640.0f, 360.0f).nearlyEquals({ 0.0f, 0.0f }));     // centro
+
+	// Un píxel a la derecha son 2/1280 de NDC; uno hacia abajo, -2/720.
+	CHECK(ndc(1.0f, 1.0f).nearlyEquals({ -1.0f + 2.0f / 1280.0f, 1.0f - 2.0f / 720.0f }));
+}
+
+// 9. Sitio de cada letra (R4a): misma fuente (celda de 20x30 con 2 de margen) y
+//    lápiz en (100, 100), en los dos espacios. En X igual; en Y, la celda empieza
+//    2 por ENCIMA del lápiz y su centro está 13 por DEBAJO de él.
+static void test_glyph_center()
+{
+	std::cout << "[9] UI: centro de una letra con +Y arriba y +Y abajo\n";
+	using luxel::detail::glyph_center;
+
+	const auto up = glyph_center({ 100.0f, 100.0f }, 2.0f, 20.0f, 30.0f, luxel::detail::k_y_up);
+	CHECK(up.nearlyEquals({ 108.0f, 87.0f }));      // abajo = restar
+
+	const auto down = glyph_center({ 100.0f, 100.0f }, 2.0f, 20.0f, 30.0f, luxel::detail::k_y_down);
+	CHECK(down.nearlyEquals({ 108.0f, 113.0f }));   // abajo = sumar
+}
+
 int main()
 {
 	test_already_sorted();
@@ -191,6 +226,8 @@ int main()
 	test_many();
 	test_draw_split();
 	test_utf8();
+	test_ui_projection();
+	test_glyph_center();
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;

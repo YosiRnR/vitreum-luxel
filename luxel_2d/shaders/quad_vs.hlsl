@@ -18,6 +18,7 @@ struct PushConstants
     column_major float4x4 view_proj;
     uint instances_slot;    // hueco bindless del buffer donde están los quads
     uint instances_offset;  // byte donde empieza este lote dentro de ese buffer
+    float y_sign;           // +1: la Y crece hacia arriba (mundo); -1: hacia abajo (UI en píxeles)
 };
 
 [[vk::push_constant]]
@@ -31,7 +32,7 @@ static const uint k_instance_size = 64;
 
 // Dos triángulos por quad: (0,1,2) y (0,2,3), con las esquinas numeradas así:
 //
-//     3 ---- 2        +Y arriba (convención de luxel)
+//     3 ---- 2        tal como se VEN: 3 y 2 arriba
 //     |    / |
 //     |  /   |
 //     0 ---- 1
@@ -90,8 +91,15 @@ VSOutput vs_main(uint vertex_id : SV_VertexID)
     const float2 rotated = float2(c * local.x - s * local.y,
                                   s * local.x + c * local.y);
 
-    // 3) Llevarla a la posición del quad.
-    const float2 world = position + rotated;
+    // Hasta aquí todo se ha calculado "con +Y arriba", tal como se ve: la
+    // esquina 3 es la de arriba a la izquierda y el giro es antihorario.
+    //
+    // 3) Pasar al espacio del lote y llevarla a la posición del quad. En la UI
+    //    subir en pantalla es RESTAR Y, así que se cambia el signo de la Y.
+    //    Ejemplo: botón de 100x40 centrado en (60, 30) píxeles. Su esquina 3 es
+    //    local (-50, +20); con y_sign = -1 queda (-50, -20) y cae en (10, 10),
+    //    arriba a la izquierda. Es lo único que cambia: la UV de abajo ni se entera.
+    const float2 world = position + float2(rotated.x, rotated.y * push_constants.y_sign);
 
     // --- UV -----------------------------------------------------------------
     // La esquina local va de -0.5 a 0.5. Pasarla a [0,1] en cada eje, con la

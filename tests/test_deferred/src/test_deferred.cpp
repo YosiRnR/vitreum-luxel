@@ -1012,6 +1012,47 @@ static void test_renderer2d_big_batch(vitreum::Window& window)
 	}
 }
 
+// 26. Dos lotes en el mismo frame (R4a): el mundo con begin y encima la UI con
+//     begin_ui, sin avisos de validacion. begin_ui con un tamano no positivo
+//     lanza invalid_argument y NO deja un lote abierto.
+static void test_renderer2d_ui_batch(vitreum::Window& window)
+{
+	std::cout << "[26] Renderer2D: lote de mundo + lote de UI\n";
+	FrameRig rig(window);
+	luxel::Renderer2D r2d(*rig.device, rig.swapchain->color_format());
+
+	auto expect_invalid_argument = [](auto&& action) {
+		try { action(); } catch (const std::invalid_argument&) { return true; }
+		return false;
+	};
+
+	for (int i = 0; i < 3; ++i)
+	{
+		auto* frame = rig.begin();
+		if (frame == nullptr) { continue; }
+
+		frame->commands().begin_rendering({ .clear = { 0.0f, 0.0f, 0.0f, 1.0f } });
+
+		r2d.begin(*frame, luxel::math::Matrix4x4::Identity());
+		r2d.draw_quad({ .size = { 1.0f, 1.0f } });
+		r2d.end();
+		CHECK(r2d.last_batch_quad_count() == 1);
+
+		CHECK(expect_invalid_argument([&] { r2d.begin_ui(*frame, 0.0f, 480.0f); }));
+		CHECK(expect_invalid_argument([&] { r2d.begin_ui(*frame, 640.0f, -1.0f); }));
+
+		r2d.begin_ui(*frame, 640.0f, 480.0f);   // si lo anterior dejase el lote abierto, esto lanzaria
+		r2d.draw_quad({ .position = { 60.0f, 30.0f }, .size = { 100.0f, 40.0f } });
+		r2d.draw_quad({ .position = { 60.0f, 80.0f }, .size = { 100.0f, 40.0f }, .rotation = 0.2f });
+		r2d.end();
+		CHECK(r2d.last_batch_quad_count() == 2);
+		CHECK(r2d.last_batch_draw_count() == 1);
+
+		frame->commands().end_rendering();
+		rig.end(*frame);
+	}
+}
+
 int main()
 {
 	test_not_destroyed_immediately();
@@ -1053,6 +1094,7 @@ int main()
 
 	test_frame_allocate_grows(window);
 	test_renderer2d_big_batch(window);
+	test_renderer2d_ui_batch(window);
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;

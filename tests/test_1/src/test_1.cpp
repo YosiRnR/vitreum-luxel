@@ -481,34 +481,50 @@ static void draw_iria_scene(luxel::Renderer2D& r2d, const Scene& scene, const Ir
 		.texture  = scene.background.get(),
 		.layer    = -1   // detrás de Iria (capa 0), aunque se envíe después
 	});
+}
 
-	// --- Texto (HUD) ---------------------------------------------------------------
-	// Todo en el mismo lote que Iria y el fondo: cada letra es un quad más.
-	// Capas: sombra 1 y texto 2, por encima de todo lo demás.
+// El HUD de Iria: un lote de UI aparte, en píxeles (begin_ui), que se dibuja
+// encima del juego. Un lote más = un draw más por ventana.
+//
+// Diferencia con tenerlo en el mundo (como en R3a): al agrandar la ventana, el
+// bosque crece con ella, pero las letras siguen midiendo los mismos píxeles.
+static void draw_iria_hud(luxel::Renderer2D& r2d, const Scene& scene, const IriaController& iria, float width, float height)
+{
 	if (!scene.font) {
 		return;
 	}
 	const luxel::BitmapFont& font = *scene.font;
-	const float margin = 0.06f;
-	const float left   = -view_width * 0.5f + margin;
-	const float top    = 1.0f - margin;
+	const float margin = 20.0f;   // píxeles
 
 	// Texto con una sombra: el mismo texto, negro semitransparente y un poco
-	// desplazado abajo a la derecha, en una capa por debajo.
+	// desplazado abajo a la derecha (en la UI, abajo es SUMAR Y), una capa por debajo.
 	const auto shadowed_text = [&](std::u8string_view text, luxel::math::Vector2f top_left, float size, luxel::Color color) {
-		const float offset = size * 0.05f;
-		r2d.draw_text(font, text, { top_left.x + offset, top_left.y - offset }, size, { 0.0f, 0.0f, 0.0f, 0.55f }, 1);
+		const float offset = std::max(1.0f, size * 0.05f);
+		r2d.draw_text(font, text, { top_left.x + offset, top_left.y + offset }, size, { 0.0f, 0.0f, 0.0f, 0.55f }, 1);
 		r2d.draw_text(font, text, top_left, size, color, 2);
 	};
 
-	shadowed_text(u8"¡Hola, Iria!", { left, top }, 0.22f, { 1.0f, 0.85f, 0.35f, 1.0f });
-	shadowed_text(u8"Flechas o A/D: correr · Espacio: saltar", { left, top - 0.26f }, 0.09f, { 1.0f, 1.0f, 1.0f, 1.0f });
+	shadowed_text(u8"¡Hola, Iria!", { margin, margin }, 80.0f, { 1.0f, 0.85f, 0.35f, 1.0f });
+	// El '\n' comprueba que la segunda línea cae debajo también con +Y abajo.
+	shadowed_text(u8"Flechas o A/D: correr\nEspacio: saltar", { margin, margin + 94.0f }, 32.0f, { 1.0f, 1.0f, 1.0f, 1.0f });
 
-	// Estado, alineado a la derecha con measure(): ancho en píxeles * escala.
-	const float state_size  = 0.12f;
+	// Estado, alineado a la derecha con measure(): ancho de la fuente * escala.
+	const float state_size  = 44.0f;
 	const float state_width = font.measure(iria.state_label()) * (state_size / font.line_height());
-	shadowed_text(iria.state_label(), { view_width * 0.5f - margin - state_width, top }, state_size,
-	              { 0.75f, 1.0f, 0.75f, 1.0f });
+	shadowed_text(iria.state_label(), { width - margin - state_width, margin }, state_size, { 0.75f, 1.0f, 0.75f, 1.0f });
+
+	// Retrato abajo a la izquierda, un poco girado. Comprueba a ojo las dos cosas
+	// que podrían salir mal con +Y abajo: que Iria no esté cabeza abajo (UV) y que
+	// un giro positivo se incline hacia la IZQUIERDA (antihorario), como en el mundo.
+	luxel::math::Vector2f uv_min{};
+	luxel::math::Vector2f uv_max{};
+	sprite_sheet_uv(k_iria_idle.first_cell, k_iria_columns, k_iria_rows, uv_min, uv_max);
+	const float portrait = 110.0f;
+	const luxel::math::Vector2f center{ margin + portrait * 0.6f, height - margin - portrait * 0.6f };
+	r2d.draw_quad({ .position = center, .size = { portrait, portrait }, .rotation = 0.15f,
+	                .color = { 0.0f, 0.0f, 0.0f, 0.5f }, .layer = 0 });
+	r2d.draw_quad({ .position = center, .size = { portrait, portrait }, .rotation = 0.15f,
+	                .texture = scene.iria_sheet.get(), .uv_min = uv_min, .uv_max = uv_max, .layer = 1 });
 }
 
 // Promedia el tiempo de CPU del lote y lo pone en el título cada medio segundo.
@@ -553,7 +569,7 @@ static void render_window_frame(luxel::Device& device, luxel::Renderer2D& r2d, R
 	auto& commands = frame->commands();
 	commands.begin_rendering({ .clear = render_window.clear });
 
-	// Todo lo que va entre begin() y end() es UN lote: un solo draw.
+	// Todo lo que va entre begin() y end() es UN lote: un solo draw (o unos pocos).
 	const auto cpu_start = std::chrono::steady_clock::now();
 	r2d.begin(*frame, render_window.camera.view_proj_matrix());
 
@@ -565,13 +581,28 @@ static void render_window_frame(luxel::Device& device, luxel::Renderer2D& r2d, R
 	}
 
 	r2d.end();
+	uint32_t quad_count = r2d.last_batch_quad_count();
+	uint32_t draw_count = r2d.last_batch_draw_count();
+
+	// Segundo lote: la UI, en píxeles, encima de la escena.
+	if (render_window.kind == SceneKind::Iria)
+	{
+		const float width  = static_cast<float>(extent.width);
+		const float height = static_cast<float>(extent.height);
+		r2d.begin_ui(*frame, width, height);
+		draw_iria_hud(r2d, scene, iria, width, height);
+		r2d.end();
+		quad_count += r2d.last_batch_quad_count();
+		draw_count += r2d.last_batch_draw_count();
+	}
+
 	const double cpu_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - cpu_start).count();
 
 	commands.end_rendering();
 
 	device.end_frame(*frame);
 
-	update_stats(render_window, cpu_ms, r2d.last_batch_quad_count(), r2d.last_batch_draw_count());
+	update_stats(render_window, cpu_ms, quad_count, draw_count);
 
 	const auto now = render_window.swapchain->extent();
 	if (now.width != render_window.last_extent.width || now.height != render_window.last_extent.height) {

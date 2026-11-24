@@ -1,5 +1,6 @@
 #include <luxel/renderer2d.h>
 #include "batch_order.h"
+#include "ui_space.h"
 #include "utf8.h"
 
 #include <array>
@@ -53,15 +54,16 @@ namespace luxel
 
 	namespace
 	{
-		// Debe coincidir con PushConstants de quad_vs.hlsl. 72 bytes de los 128
+		// Debe coincidir con PushConstants de quad_vs.hlsl. 76 bytes de los 128
 		// que permite bind_constants (ver command_list.h).
 		struct PushConstants
 		{
 			std::array<float, 16> view_proj;   // column-major, como Matrix4x4::m
 			uint32_t instances_slot;
 			uint32_t instances_offset;
+			float y_sign;                      // +1 mundo, -1 UI (ver ui_space.h)
 		};
-		static_assert(sizeof(PushConstants) == 72);
+		static_assert(sizeof(PushConstants) == 76);
 		static_assert(sizeof(PushConstants) % 4 == 0, "bind_constants exige múltiplo de 4");
 
 		// 6 vértices por quad: dos triángulos (ver la tabla de quad_vs.hlsl).
@@ -132,12 +134,27 @@ namespace luxel
 
 	void Renderer2D::begin(Frame& frame, const math::Matrix4x4& view_proj)
 	{
+		open_batch(frame, view_proj, detail::k_y_up);
+	}
+
+	void Renderer2D::begin_ui(Frame& frame, float width, float height)
+	{
+		// Escrito así (y no width <= 0) para que un NaN también caiga aquí.
+		if (!(width > 0.0f) || !(height > 0.0f)) {
+			throw std::invalid_argument("Renderer2D::begin_ui: el tamaño debe ser mayor que 0");
+		}
+		open_batch(frame, detail::ui_projection(width, height), detail::k_y_down);
+	}
+
+	void Renderer2D::open_batch(Frame& frame, const math::Matrix4x4& view_proj, float y_sign)
+	{
 		if (m_frame != nullptr) {
 			throw std::logic_error("Renderer2D::begin: ya hay un lote abierto (falta end())");
 		}
 
 		m_frame = &frame;
 		m_view_proj = view_proj;
+		m_y_sign = y_sign;
 		// clear() no libera la memoria del vector: el frame siguiente reutiliza
 		// la misma capacidad sin volver a reservar.
 		m_instances.clear();
@@ -176,7 +193,7 @@ namespace luxel
 	void Renderer2D::draw_text(const BitmapFont& font, std::u8string_view text, math::Vector2f top_left,
 	                           float size, Color color, int32_t layer)
 	{
-		// Escala: píxeles de la fuente -> unidades del mundo. size es el alto de
+		// Escala: píxeles de la fuente -> unidades del lote. size es el alto de
 		// una línea, así que una línea de la fuente (line_height px) mide "size".
 		const float scale  = size / font.line_height();
 		const float cell_w = font.cell_width() * scale;
@@ -192,7 +209,7 @@ namespace luxel
 
 			if (cp == U'\n') {
 				pen.x = top_left.x;
-				pen.y -= size;   // +Y arriba: la línea siguiente va más abajo
+				pen.y -= m_y_sign * size;   // bajar una línea (en la UI, bajar es sumar)
 				continue;
 			}
 
@@ -201,13 +218,9 @@ namespace luxel
 			// El espacio no se dibuja (sería una celda transparente): solo avanza.
 			if (cp != U' ')
 			{
-				// La celda entera es el quad. El glifo empieza "pad" dentro de la
-				// celda, así que la celda se coloca pad a la izquierda y pad arriba
-				// del lápiz. position es el CENTRO del quad.
-				const float cell_left = pen.x - pad;
-				const float cell_top  = pen.y + pad;
+				// La celda entera es el quad (su centro, en glyph_center).
 				draw_quad({
-					.position = { cell_left + cell_w * 0.5f, cell_top - cell_h * 0.5f },
+					.position = detail::glyph_center(pen, pad, cell_w, cell_h, m_y_sign),
 					.size     = { cell_w, cell_h },
 					.color    = color,
 					.texture  = &font.texture(),
@@ -274,7 +287,8 @@ namespace luxel
 			const PushConstants push_constants{
 				.view_proj        = m_view_proj.m,
 				.instances_slot   = allocation.slot_index,
-				.instances_offset = allocation.offset
+				.instances_offset = allocation.offset,
+				.y_sign           = m_y_sign
 			};
 			commands.bind_constants(std::as_bytes(std::span(&push_constants, 1)));
 

@@ -34,9 +34,9 @@ namespace luxel
 	// Ojo: con designated initializers los campos deben ir EN EL ORDEN de la struct.
 	struct Quad
 	{
-		math::Vector2f position{ 0.0f, 0.0f };  // CENTRO del quad, en unidades del mundo
-		math::Vector2f size{ 1.0f, 1.0f };      // ancho y alto, en unidades del mundo
-		float rotation{ 0.0f };                 // radianes, positivo = antihorario (+Y arriba)
+		math::Vector2f position{ 0.0f, 0.0f };  // CENTRO del quad, en unidades del lote (mundo, o píxeles con begin_ui)
+		math::Vector2f size{ 1.0f, 1.0f };      // ancho y alto, en esas mismas unidades
+		float rotation{ 0.0f };                 // radianes, positivo = antihorario (tal como se ve)
 		Color color{};                          // se multiplica por el color de la textura
 		Texture* texture{ nullptr };            // nullptr = textura blanca 1x1 => color liso
 		Sampler* sampler{ nullptr };            // nullptr = sampler lineal por defecto del renderer
@@ -73,15 +73,31 @@ namespace luxel
 		// proyección en píxeles. Lanza si ya había un lote abierto.
 		void begin(Frame& frame, const math::Matrix4x4& view_proj);
 
+		// Empieza un lote de UI, en píxeles: (0,0) es la esquina de ARRIBA a la
+		// izquierda y la Y crece hacia ABAJO. width y height son el tamaño de donde se
+		// dibuja (el extent de la swapchain). No recibe una matriz a propósito: la
+		// proyección y el sentido de la Y van siempre juntos y no se pueden descuadrar.
+		// Lo demás no cambia: las imágenes y las letras salen derechas, y un giro
+		// positivo se sigue VIENDO antihorario. Se cierra igual, con end().
+		// Lanza logic_error si ya había un lote abierto e invalid_argument si el
+		// tamaño no es positivo.
+		//
+		//     r2d.begin(*frame, camera.view_proj_matrix());   // el juego
+		//     r2d.end();
+		//     r2d.begin_ui(*frame, 1280, 720);                // encima, la UI
+		//     r2d.end();
+		void begin_ui(Frame& frame, float width, float height);
+
 		// Añade un quad al lote. No toca la GPU: solo escribe en un vector en CPU.
 		void draw_quad(const Quad& quad);
 
 		// Añade un texto (UTF-8) al lote: un quad por letra, con la textura del
 		// atlas de la fuente. Las letras van en el MISMO lote que el resto
 		// (bindless), así que un HUD no cuesta draws extra.
-		//   top_left: esquina de arriba a la izquierda de la primera línea, en el mundo.
-		//   size:     alto de una línea en unidades del mundo (la escala de la fuente).
-		// '\n' empieza una línea nueva debajo (el mundo tiene +Y arriba).
+		//   top_left: esquina de arriba a la izquierda de la primera línea, en
+		//             unidades del lote (mundo con begin, píxeles con begin_ui).
+		//   size:     alto de una línea, en esas mismas unidades (la escala de la fuente).
+		// '\n' empieza una línea nueva debajo.
 		// Ojo: guarda el índice bindless del atlas, así que la fuente debe vivir
 		// hasta que se dibuje el frame (como cualquier textura).
 		void draw_text(const BitmapFont& font, std::u8string_view text, math::Vector2f top_left, float size,
@@ -102,6 +118,9 @@ namespace luxel
 		uint32_t last_batch_draw_count() const noexcept { return m_last_batch_draw_count; }
 
 	private:
+		// Lo común de begin y begin_ui.
+		void open_batch(Frame& frame, const math::Matrix4x4& view_proj, float y_sign);
+
 		// El registro que llega a la GPU (64 bytes). Se define en el .cpp: es un
 		// detalle de implementación que tiene que coincidir con el shader, y la
 		// aplicación no necesita verlo. Un std::vector de un tipo incompleto
@@ -124,6 +143,7 @@ namespace luxel
 
 		Frame* m_frame{ nullptr };               // != nullptr <=> hay un lote abierto
 		math::Matrix4x4 m_view_proj{};
+		float m_y_sign{ 1.0f };                  // +1: la Y crece hacia arriba (begin); -1: hacia abajo (begin_ui)
 		uint32_t m_last_batch_quad_count{ 0 };
 		uint32_t m_last_batch_draw_count{ 0 };
 	};
