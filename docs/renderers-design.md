@@ -175,6 +175,15 @@ La UI se divide en dos partes que no conviene mezclar:
   - Con esto R2 queda completo.
 - **R3. Texto**: primero fuente bitmap (imagen con los caracteres en rejilla);
   más adelante, rasterizar TTF a mano (hito de aprendizaje, como el PNG).
+  - R3a (hecho): `BitmapFont` en `luxel_2d` (atlas RGBA8 en rejilla de celdas
+    iguales + avance por glifo, recibido ya generado: luxel_2d no lee
+    ficheros ni sabe de GDI) y `Renderer2D::draw_text` (UTF-8, un quad por
+    letra en el mismo lote, '\n', `measure` para alinear). El atlas de prueba
+    lo genera `test_1` con GDI de Win32 a partir de una fuente del sistema
+    (Latin-1, 32-255). HUD en la ventana de Iria.
+  - Pendiente de R3: kerning, mipmaps para tamaños muy pequeños, orientación
+    de `draw_text` con la proyección de UI en píxeles (+Y abajo, R4) y, como
+    hito de aprendizaje, rasterizar TTF a mano en vez de usar GDI.
 - **R4. Primitivas de UI**: rectángulos redondeados con SDF, bordes, recorte.
   Después, librería de UI mínima con input.
 - **R5. 3D**: depth buffer, `Mesh`, materiales, una luz direccional. Después,

@@ -389,6 +389,31 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   espacio, W o flecha arriba saltan; mirar a la izquierda = intercambiar
   `uv_min.x`/`uv_max.x`. La ventana de Iria recibe el foco al arrancar.
   Títulos de ventana solo en ASCII (UTF-8 en títulos sigue aparcado).
+- Hecho (R3a, texto con fuente bitmap): en `luxel_2d`, `BitmapFont`
+  (`include/luxel/bitmap_font.h`, `src/bitmap_font.cpp`): recibe un atlas
+  RGBA8 ya generado (RGB blanco, alfa = cobertura) con celdas iguales en
+  rejilla (`cell_width`/`cell_height`, `columns`, `padding` alrededor del
+  glifo, `first_codepoint`), un avance en píxeles por glifo y `line_height`;
+  valida el descriptor (`invalid_argument`), crea la textura `R8G8B8A8_UNorm`
+  y precalcula la UV de cada celda; `glyph(cp)` con `fallback` ('?'),
+  `measure(texto)` (ancho en píxeles de la línea más larga).
+  `Renderer2D::draw_text(font, u8string_view, top_left, size, color, layer)`:
+  un quad por letra (la celda entera, colocada `padding` arriba a la izquierda
+  del lápiz), el espacio solo avanza, '\n' baja una línea; escala =
+  `size / line_height`; las letras van en el mismo lote que el resto.
+  `luxel_2d/src/utf8.h`: `detail::next_codepoint` (1-4 bytes; mal formado =>
+  U+FFFD y avanza 1 byte). El atlas lo genera `test_1` con GDI
+  (`tests/test_1/src/gdi_font_atlas.*`, enlaza `gdi32`; `windows.h` aislado en
+  su `.cpp` con `NOMINMAX`): DIB section top-down de 32 bits, `CreateFontW`
+  con `ANTIALIASED_QUALITY` (escala de grises, sin ClearType), avances con
+  `GetTextExtentPoint32W`, cobertura = canal rojo del blanco sobre negro.
+  Latin-1 (32-255: ¡ ¿ á ñ ü...) en Segoe UI negrita 48 px. HUD en la ventana de
+  Iria: "¡Hola, Iria!", controles y el estado (`IriaController::state_label()`)
+  alineado a la derecha con `measure`, con sombra (capa 1) bajo el texto (capa
+  2); 102 quads en 1 draw. `test_renderer2d` caso 7: UTF-8. Pendiente: sin
+  kerning; sin mipmaps (fuente de 48 px muy reducida puede parpadear);
+  `draw_text` asume +Y arriba (la UI en píxeles con +Y abajo, R4, tendrá que
+  tenerlo en cuenta); rasterizar TTF a mano sigue como hito de aprendizaje.
   Pendiente del hito 8, para más
   adelante: llamar a `trim()` también de forma periódica (p. ej. en
   `begin_frame`) si aparecen más rutas de subida grandes, y asignaciones
