@@ -1,8 +1,10 @@
 #include <luxel/renderer2d.h>
 #include "batch_order.h"
+#include "style_table.h"
 #include "ui_space.h"
 #include "utf8.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <span>
@@ -37,7 +39,19 @@ namespace luxel
 		float rotation;
 		uint32_t texture_index;
 		uint32_t sampler_index;
-		uint32_t padding;   // relleno hasta 64: múltiplo de 16 => cada quad empieza alineado
+		uint32_t style_index;   // 0 = sin estilo (ocupa lo que era relleno: siguen siendo 64 bytes)
+	};
+
+	// Un estilo tal y como lo lee quad_ps.hlsl. El relleno lo deja en 16 bytes;
+	// crecerá con el borde (R4c) y el recorte (R4d), de 16 en 16.
+	struct Renderer2D::StyleRecord
+	{
+		float corner_radius;
+		float padding[3];
+
+		// Comparación campo a campo generada por el compilador (C++20): la usa
+		// add_style para reutilizar el último estilo.
+		bool operator==(const StyleRecord&) const = default;
 	};
 
 	// Arrays de float en vez de math::Vector2f: así el formato no depende de
@@ -54,7 +68,7 @@ namespace luxel
 
 	namespace
 	{
-		// Debe coincidir con PushConstants de quad_vs.hlsl. 76 bytes de los 128
+		// Debe coincidir con PushConstants de quad_vs.hlsl y quad_ps.hlsl. 84 bytes de los 128
 		// que permite bind_constants (ver command_list.h).
 		struct PushConstants
 		{
@@ -62,8 +76,10 @@ namespace luxel
 			uint32_t instances_slot;
 			uint32_t instances_offset;
 			float y_sign;                      // +1 mundo, -1 UI (ver ui_space.h)
+			uint32_t styles_slot;              // tabla de estilos del draw (0 = el draw no usa ninguno)
+			uint32_t styles_offset;
 		};
-		static_assert(sizeof(PushConstants) == 76);
+		static_assert(sizeof(PushConstants) == 84);
 		static_assert(sizeof(PushConstants) % 4 == 0, "bind_constants exige múltiplo de 4");
 
 		// 6 vértices por quad: dos triángulos (ver la tabla de quad_vs.hlsl).
@@ -82,6 +98,10 @@ namespace luxel
 		static_assert(offsetof(QuadInstance, uv_min)   == 16);
 		static_assert(offsetof(QuadInstance, color)    == 32);
 		static_assert(offsetof(QuadInstance, rotation) == 48);
+		static_assert(offsetof(QuadInstance, style_index) == 60);
+		static_assert(sizeof(StyleRecord) == 16, "StyleRecord debe medir k_style_size (ver quad_ps.hlsl)");
+		static_assert(sizeof(StyleRecord) <= sizeof(QuadInstance),
+		              "un draw usa como mucho un estilo por quad: así su tabla cabe siempre en una reserva");
 
 		// Blending Alpha por defecto: lo normal en 2D (sprites con transparencia).
 		// Mismo pipeline para todos los quads => un solo draw por lote.
@@ -159,6 +179,7 @@ namespace luxel
 		// la misma capacidad sin volver a reservar.
 		m_instances.clear();
 		m_layers.clear();
+		m_styles.clear();
 	}
 
 	void Renderer2D::draw_quad(const Quad& quad)
@@ -166,7 +187,36 @@ namespace luxel
 		if (m_frame == nullptr) {
 			throw std::logic_error("Renderer2D::draw_quad: fuera de begin()/end()");
 		}
+		push_quad(quad, detail::k_no_style);
+	}
 
+	void Renderer2D::draw_rounded_rect(const RoundedRect& rect)
+	{
+		if (m_frame == nullptr) {
+			throw std::logic_error("Renderer2D::draw_rounded_rect: fuera de begin()/end()");
+		}
+
+		// Radio entre 0 y la mitad del lado corto. Más no tiene sentido: en un botón
+		// de 100x40, con radio 20 los lados cortos ya son medias circunferencias.
+		const float max_radius = std::max(0.0f, std::min(rect.size.x, rect.size.y) * 0.5f);
+		const float radius     = std::clamp(rect.corner_radius, 0.0f, max_radius);
+
+		const uint32_t style = detail::add_style(m_styles, StyleRecord{ .corner_radius = radius, .padding = {} });
+
+		push_quad({
+			.position = detail::rect_center(rect.top_left, rect.size, m_y_sign),
+			.size     = rect.size,
+			.color    = rect.color,
+			.texture  = rect.texture,
+			.sampler  = rect.sampler,
+			.uv_min   = rect.uv_min,
+			.uv_max   = rect.uv_max,
+			.layer    = rect.layer
+		}, style);
+	}
+
+	void Renderer2D::push_quad(const Quad& quad, uint32_t style_index)
+	{
 		// Si no hay textura o sampler, los del renderer. bindless_index() es el
 		// hueco de la tabla bindless: lo único que el shader necesita saber.
 		const Texture& texture = quad.texture ? *quad.texture : *m_white_texture;
@@ -184,7 +234,7 @@ namespace luxel
 			.rotation      = quad.rotation,
 			.texture_index = texture.bindless_index(),
 			.sampler_index = sampler.bindless_index(),
-			.padding       = 0
+			.style_index   = style_index
 		});
 		// La capa no va a la GPU: solo sirve para ordenar en end().
 		m_layers.push_back(quad.layer);
@@ -254,7 +304,7 @@ namespace luxel
 		// 1) Orden por capa. Si ya venían en orden (lo normal: todo en la misma
 		//    capa) no se copia nada y se dibuja directamente m_instances. Si no,
 		//    se copia cada quad a su sitio en m_sorted siguiendo m_order.
-		std::span<const QuadInstance> quads = m_instances;
+		std::span<QuadInstance> quads = m_instances;
 		if (detail::stable_order_by_layer(m_layers, m_order))
 		{
 			m_sorted.resize(quad_count);
@@ -276,23 +326,36 @@ namespace luxel
 		{
 			const detail::DrawRange range = detail::draw_range(quad_count, k_max_quads_per_draw, d);
 
-			// a) Copiar el tramo al asignador por frame: memoria visible por la
+			// a) La tabla de estilos de este tramo. Va ANTES de copiar los quads
+			//    porque les cambia el style_index. Sin estilos no se sube nada.
+			BufferAllocation styles{};
+			if (!m_styles.empty())
+			{
+				detail::compact_styles(quads.subspan(range.first, range.count), m_styles, m_style_remap, m_draw_styles);
+				if (!m_draw_styles.empty()) {
+					styles = frame.allocate(std::as_bytes(std::span(m_draw_styles)));
+				}
+			}
+
+			// b) Copiar el tramo al asignador por frame: memoria visible por la
 			//    CPU y la GPU, válida hasta que este frame termine. Cada tramo
 			//    puede acabar en un bloque distinto (otro slot bindless).
 			const BufferAllocation allocation =
 				frame.allocate(std::as_bytes(quads.subspan(range.first, range.count)));
 
-			// b) Push constants: la matriz y dónde están los quads de ESTE tramo.
+			// c) Push constants: la matriz y dónde están los quads de ESTE tramo.
 			//    Para el shader, cada tramo empieza en el quad 0 de su offset.
 			const PushConstants push_constants{
 				.view_proj        = m_view_proj.m,
 				.instances_slot   = allocation.slot_index,
 				.instances_offset = allocation.offset,
-				.y_sign           = m_y_sign
+				.y_sign           = m_y_sign,
+				.styles_slot      = styles.slot_index,
+				.styles_offset    = styles.offset
 			};
 			commands.bind_constants(std::as_bytes(std::span(&push_constants, 1)));
 
-			// c) 6 vértices por quad. El vertex shader convierte cada
+			// d) 6 vértices por quad. El vertex shader convierte cada
 			//    SV_VertexID en (quad, esquina).
 			commands.draw(range.count * k_vertices_per_quad);
 			++m_last_batch_draw_count;

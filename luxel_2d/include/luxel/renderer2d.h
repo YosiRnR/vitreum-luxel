@@ -45,6 +45,21 @@ namespace luxel
 		int32_t layer{ 0 };                     // capa: las bajas se dibujan antes (detrás); a igual capa, orden de envío
 	};
 
+	// Un rectángulo con las esquinas redondeadas (botones, paneles...). Se coloca
+	// por su esquina de ARRIBA a la izquierda, como el texto, y no gira.
+	struct RoundedRect
+	{
+		math::Vector2f top_left{ 0.0f, 0.0f };  // en unidades del lote
+		math::Vector2f size{ 1.0f, 1.0f };
+		float corner_radius{ 0.0f };            // se limita a la mitad del lado corto (ahí ya es una cápsula)
+		Color color{};                          // se multiplica por la textura, si la hay
+		Texture* texture{ nullptr };            // nullptr = color liso
+		Sampler* sampler{ nullptr };
+		math::Vector2f uv_min{ 0.0f, 0.0f };
+		math::Vector2f uv_max{ 1.0f, 1.0f };
+		int32_t layer{ 0 };
+	};
+
 	// Uso típico, dentro de un frame:
 	//
 	//     frame->commands().begin_rendering(...);
@@ -91,6 +106,11 @@ namespace luxel
 		// Añade un quad al lote. No toca la GPU: solo escribe en un vector en CPU.
 		void draw_quad(const Quad& quad);
 
+		// Añade un rectángulo redondeado. Va en el mismo lote que los quads y las
+		// letras: es un quad más, con un "estilo" que el pixel shader usa para
+		// recortar las esquinas (ver style_table.h y quad_ps.hlsl).
+		void draw_rounded_rect(const RoundedRect& rect);
+
 		// Añade un texto (UTF-8) al lote: un quad por letra, con la textura del
 		// atlas de la fuente. Las letras van en el MISMO lote que el resto
 		// (bindless), así que un HUD no cuesta draws extra.
@@ -121,6 +141,9 @@ namespace luxel
 		// Lo común de begin y begin_ui.
 		void open_batch(Frame& frame, const math::Matrix4x4& view_proj, float y_sign);
 
+		// Lo común de draw_quad y draw_rounded_rect. style_index: 0 = sin estilo.
+		void push_quad(const Quad& quad, uint32_t style_index);
+
 		// El registro que llega a la GPU (64 bytes). Se define en el .cpp: es un
 		// detalle de implementación que tiene que coincidir con el shader, y la
 		// aplicación no necesita verlo. Un std::vector de un tipo incompleto
@@ -128,6 +151,10 @@ namespace luxel
 		// se USA el vector (constructor, destructor, push_back...), es decir, en
 		// el .cpp. Por eso el destructor se define allí y no aquí con "= default".
 		struct QuadInstance;
+
+		// Lo que un sprite no necesita (radio...), en una tabla aparte. También
+		// llega a la GPU y también se define en el .cpp.
+		struct StyleRecord;
 
 		Ref<Device> m_device;                    // mantiene vivo el device mientras exista el renderer
 		Ref<GraphicsPipeline> m_pipeline;
@@ -140,6 +167,9 @@ namespace luxel
 		std::vector<int32_t> m_layers;           // capa de cada quad (paralelo a m_instances)
 		std::vector<uint32_t> m_order;           // orden de dibujo, si hubo que reordenar
 		std::vector<QuadInstance> m_sorted;      // los quads ya reordenados, si hubo que reordenar
+		std::vector<StyleRecord> m_styles;       // tabla de estilos del lote entero
+		std::vector<StyleRecord> m_draw_styles;  // los que usa el draw que se está preparando
+		std::vector<uint32_t> m_style_remap;     // memoria de trabajo de compact_styles
 
 		Frame* m_frame{ nullptr };               // != nullptr <=> hay un lote abierto
 		math::Matrix4x4 m_view_proj{};

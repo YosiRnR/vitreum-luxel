@@ -525,6 +525,35 @@ static void draw_iria_hud(luxel::Renderer2D& r2d, const Scene& scene, const Iria
 	                .color = { 0.0f, 0.0f, 0.0f, 0.5f }, .layer = 0 });
 	r2d.draw_quad({ .position = center, .size = { portrait, portrait }, .rotation = 0.15f,
 	                .texture = scene.iria_sheet.get(), .uv_min = uv_min, .uv_max = uv_max, .layer = 1 });
+
+	// --- Panel con botones (R4b) ---------------------------------------------------
+	// Cada rectángulo redondeado es un quad más del lote. Tres radios para ver la
+	// SDF: 4 (casi recto), 14, y 100, que se limita a 24 (medio alto) y da una cápsula.
+	const luxel::math::Vector2f panel_size{ 260.0f, 218.0f };
+	const luxel::math::Vector2f panel{ width - margin - panel_size.x, height - margin - panel_size.y };
+	r2d.draw_rounded_rect({ .top_left = panel, .size = panel_size, .corner_radius = 24.0f,
+	                        .color = { 0.02f, 0.05f, 0.10f, 0.75f }, .layer = 0 });
+
+	struct Button { std::u8string_view label; float radius; luxel::Color color; };
+	const Button buttons[] = {
+		{ u8"Jugar",    4.0f,   { 0.05f, 0.35f, 0.80f, 1.0f } },
+		{ u8"Opciones", 14.0f,  { 0.10f, 0.50f, 0.20f, 1.0f } },
+		{ u8"Salir",    100.0f, { 0.70f, 0.10f, 0.10f, 1.0f } },
+	};
+	const luxel::math::Vector2f button_size{ 220.0f, 48.0f };
+	const float label_size = 30.0f;
+	luxel::math::Vector2f at{ panel.x + 20.0f, panel.y + 20.0f };
+	for (const Button& button : buttons)
+	{
+		r2d.draw_rounded_rect({ .top_left = at, .size = button_size, .corner_radius = button.radius,
+		                        .color = button.color, .layer = 1 });
+		// Texto centrado: el hueco que sobra, repartido a los dos lados.
+		const float label_width = font.measure(button.label) * (label_size / font.line_height());
+		r2d.draw_text(font, button.label,
+		              { at.x + (button_size.x - label_width) * 0.5f, at.y + (button_size.y - label_size) * 0.5f },
+		              label_size, { 1.0f, 1.0f, 1.0f, 1.0f }, 2);
+		at.y += button_size.y + 17.0f;
+	}
 }
 
 // Promedia el tiempo de CPU del lote y lo pone en el título cada medio segundo.

@@ -31,14 +31,18 @@ namespace luxel::detail
 		return math::Matrix4x4::orthographic(0.0f, width, height, 0.0f);
 	}
 
+	// Centro de un rectángulo a partir de su esquina de arriba a la izquierda.
+	inline math::Vector2f rect_center(math::Vector2f top_left, math::Vector2f size, float y_sign)
+	{
+		return { top_left.x + size.x * 0.5f, top_left.y - y_sign * size.y * 0.5f };   // bajar medio alto
+	}
+
 	// Centro de la celda de una letra. pen es la esquina de arriba a la
 	// izquierda del hueco de la letra; la celda empieza "pad" más a la izquierda
 	// y "pad" más ARRIBA (ver el dibujo de bitmap_font.h).
 	inline math::Vector2f glyph_center(math::Vector2f pen, float pad, float cell_w, float cell_h, float y_sign)
 	{
-		const float left = pen.x - pad;
-		const float top  = pen.y + y_sign * pad;              // subir pad
-		return { left + cell_w * 0.5f, top - y_sign * cell_h * 0.5f };   // bajar media celda
+		return rect_center({ pen.x - pad, pen.y + y_sign * pad }, { cell_w, cell_h }, y_sign);
 	}
 
 } // namespace luxel::detail

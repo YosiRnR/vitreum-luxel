@@ -19,6 +19,8 @@ struct PushConstants
     uint instances_slot;    // hueco bindless del buffer donde están los quads
     uint instances_offset;  // byte donde empieza este lote dentro de ese buffer
     float y_sign;           // +1: la Y crece hacia arriba (mundo); -1: hacia abajo (UI en píxeles)
+    uint styles_slot;       // tabla de estilos: solo la usa el pixel shader
+    uint styles_offset;
 };
 
 [[vk::push_constant]]
@@ -59,6 +61,9 @@ struct VSOutput
     // pasemos. Con enteros además es obligatorio: no se pueden interpolar.
     nointerpolation uint texture_index : TEXCOORD1;
     nointerpolation uint sampler_index : TEXCOORD2;
+    float2 local    : TEXCOORD3;                    // posición dentro del quad, sin girar: (0,0) = centro
+    nointerpolation float2 half_size : TEXCOORD4;
+    nointerpolation uint style_index : TEXCOORD5;   // 0 = sin estilo (ver style_table.h)
 };
 
 VSOutput vs_main(uint vertex_id : SV_VertexID)
@@ -74,7 +79,7 @@ VSOutput vs_main(uint vertex_id : SV_VertexID)
     const float4 position_size = asfloat(instances.Load4(base +  0)); // xy = position, zw = size
     const float4 uv_rect       = asfloat(instances.Load4(base + 16)); // xy = uv_min,   zw = uv_max
     const float4 color         = asfloat(instances.Load4(base + 32));
-    const uint4  extra         =         instances.Load4(base + 48);  // x = rotation (bits de float), y = textura, z = sampler, w = relleno
+    const uint4  extra         =         instances.Load4(base + 48);  // x = rotation (bits de float), y = textura, z = sampler, w = estilo
 
     const float2 position = position_size.xy;
     const float2 size     = position_size.zw;
@@ -116,5 +121,8 @@ VSOutput vs_main(uint vertex_id : SV_VertexID)
     output.color         = color;
     output.texture_index = extra.y;
     output.sampler_index = extra.z;
+    output.local         = local;        // antes de girar: la SDF no tiene que saber nada del giro
+    output.half_size     = size * 0.5f;
+    output.style_index   = extra.w;
     return output;
 }

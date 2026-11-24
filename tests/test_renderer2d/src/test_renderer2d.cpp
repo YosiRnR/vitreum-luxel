@@ -3,16 +3,19 @@
 //     venían en orden.
 //   - draw_count / draw_range: troceo de un lote grande en draws.
 //   - ui_space.h: proyección en píxeles y sitio de cada letra (hito R4a).
+//   - style_table.h: tabla de estilos (hito R4b).
 //
 // La parte con GPU (que los draws salen bien y sin avisos de validación) está
 // en test_deferred (caso 25) y se ve en test_1.
 
 #include "batch_order.h"
+#include "style_table.h"
 #include "ui_space.h"
 #include "utf8.h"
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -217,6 +220,51 @@ static void test_glyph_center()
 	CHECK(down.nearlyEquals({ 108.0f, 113.0f }));   // abajo = sumar
 }
 
+// 10. Tabla de estilos (R4b): el 0 es "sin estilo" y los números empiezan en 1;
+//     si el estilo es igual que el último, se reutiliza.
+static void test_add_style()
+{
+	std::cout << "[10] estilos: anadir y reutilizar el ultimo\n";
+	std::vector<int> styles;   // un "estilo" puede ser cualquier cosa con ==
+
+	CHECK(luxel::detail::add_style(styles, 8) == 1);
+	CHECK(luxel::detail::add_style(styles, 8) == 1);    // igual que el último: el mismo
+	CHECK(luxel::detail::add_style(styles, 16) == 2);
+	CHECK(luxel::detail::add_style(styles, 8) == 3);    // solo se mira el último
+	CHECK((styles == std::vector<int>{ 8, 16, 8 }));
+}
+
+// 11. compact_styles (R4b): cada draw lleva solo los estilos que usan sus quads,
+//     renumerados. Escenario del comentario de style_table.h: quads con los
+//     estilos 7, 0, 9, 7 -> tabla { 7, 9 } y quads 1, 0, 2, 1.
+static void test_compact_styles()
+{
+	std::cout << "[11] estilos: tabla de cada draw\n";
+	struct FakeQuad { uint32_t style_index; };
+
+	std::vector<int> styles;
+	for (int i = 1; i <= 10; ++i) { styles.push_back(i * 100); }   // el estilo n vale n * 100
+
+	std::vector<FakeQuad> quads{ { 7 }, { 0 }, { 9 }, { 7 }, /* otro draw: */ { 9 }, { 10 } };
+	std::vector<uint32_t> remap{ 5, 5, 5 };   // basura de una llamada anterior
+	std::vector<int> table{ 1, 2, 3 };
+
+	luxel::detail::compact_styles(std::span(quads).subspan(0, 4), styles, remap, table);
+	CHECK((table == std::vector<int>{ 700, 900 }));
+	CHECK(quads[0].style_index == 1 && quads[1].style_index == 0 && quads[2].style_index == 2 && quads[3].style_index == 1);
+	CHECK(quads[4].style_index == 9 && quads[5].style_index == 10);   // los del otro draw, intactos
+
+	// El segundo draw empieza de cero: no se acuerda de la numeración del primero.
+	luxel::detail::compact_styles(std::span(quads).subspan(4, 2), styles, remap, table);
+	CHECK((table == std::vector<int>{ 900, 1000 }));
+	CHECK(quads[4].style_index == 1 && quads[5].style_index == 2);
+
+	// Un draw sin ningún estilo: tabla vacía.
+	std::vector<FakeQuad> plain{ { 0 }, { 0 } };
+	luxel::detail::compact_styles(std::span(plain), styles, remap, table);
+	CHECK(table.empty());
+}
+
 int main()
 {
 	test_already_sorted();
@@ -228,6 +276,8 @@ int main()
 	test_utf8();
 	test_ui_projection();
 	test_glyph_center();
+	test_add_style();
+	test_compact_styles();
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;

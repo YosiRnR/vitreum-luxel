@@ -1053,6 +1053,54 @@ static void test_renderer2d_ui_batch(vitreum::Window& window)
 	}
 }
 
+// 27. Rectangulos redondeados (R4b): 40.000 con radios distintos y sprites sin
+//     estilo mezclados, en capas alternas = 3 draws, cada uno con su tabla de
+//     estilos, sin avisos de validacion. Radios absurdos se aceptan (se limitan)
+//     y draw_rounded_rect fuera de begin/end lanza logic_error.
+static void test_renderer2d_rounded_rects(vitreum::Window& window)
+{
+	std::cout << "[27] Renderer2D: 40.000 rectangulos redondeados\n";
+	FrameRig rig(window);
+	luxel::Renderer2D r2d(*rig.device, rig.swapchain->color_format());
+
+	bool threw = false;
+	try { r2d.draw_rounded_rect({}); } catch (const std::logic_error&) { threw = true; }
+	CHECK(threw);
+
+	for (int i = 0; i < 3; ++i)
+	{
+		auto* frame = rig.begin();
+		if (frame == nullptr) { continue; }
+
+		frame->commands().begin_rendering({ .clear = { 0.0f, 0.0f, 0.0f, 1.0f } });
+		r2d.begin_ui(*frame, 640.0f, 480.0f);
+		for (int q = 0; q < 40000; ++q)
+		{
+			const luxel::math::Vector2f at{ (q % 200) * 3.2f, (q / 200) * 2.4f };
+			if (q % 4 == 0) {
+				r2d.draw_quad({ .position = at, .size = { 3.0f, 2.0f }, .layer = q % 3 });
+			}
+			else {
+				r2d.draw_rounded_rect({ .top_left = at, .size = { 3.0f, 2.0f }, .corner_radius = q * 0.00002f, .layer = q % 3 });
+			}
+		}
+		r2d.end();
+		CHECK(r2d.last_batch_quad_count() == 40000);
+		CHECK(r2d.last_batch_draw_count() == 3);
+
+		// Radios fuera de rango y tamanos raros: no lanzan ni dan avisos.
+		r2d.begin_ui(*frame, 640.0f, 480.0f);
+		r2d.draw_rounded_rect({ .top_left = { 10, 10 }, .size = { 100, 40 }, .corner_radius = 1000.0f });
+		r2d.draw_rounded_rect({ .top_left = { 10, 60 }, .size = { 100, 40 }, .corner_radius = -5.0f });
+		r2d.draw_rounded_rect({ .top_left = { 10, 110 }, .size = { 0, 0 }, .corner_radius = 8.0f });
+		r2d.end();
+		CHECK(r2d.last_batch_draw_count() == 1);
+
+		frame->commands().end_rendering();
+		rig.end(*frame);
+	}
+}
+
 int main()
 {
 	test_not_destroyed_immediately();
@@ -1095,6 +1143,7 @@ int main()
 	test_frame_allocate_grows(window);
 	test_renderer2d_big_batch(window);
 	test_renderer2d_ui_batch(window);
+	test_renderer2d_rounded_rects(window);
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;
