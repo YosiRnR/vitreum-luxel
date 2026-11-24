@@ -418,9 +418,9 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   rasterizar TTF a mano sigue como hito de aprendizaje. (Corregido después: el
   `padding` del atlas pasó de 2 a 4 px; con 2, la cola de la 'j', que sobresale
   3 px a la izquierda, se metía en la celda de la 'i'.)
-- En curso: R4 de `docs/renderers-design.md`, primitivas de UI del `Renderer2D`
-  (rectángulos redondeados con SDF, bordes y recorte; la librería de widgets va
-  después). Diseño acordado (sección "Decisiones de R4"), sub-hitos R4a-R4d.
+- Hecho (R4 completo, R4a-R4d, primitivas de UI del `Renderer2D`; rectángulos
+  redondeados con SDF, bordes y recorte). Diseño en la sección "Decisiones de
+  R4" de `docs/renderers-design.md`.
   R4a hecho (UI en píxeles): `Renderer2D::begin_ui(frame, ancho, alto)` abre un
   lote con (0,0) arriba a la izquierda y +Y abajo (`invalid_argument` si el
   tamaño no es positivo; no deja el lote abierto); se cierra con `end()` como
@@ -459,7 +459,21 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   borde el C++ manda alfa 0 (sin `if` en el shader, y así comparten estilo).
   `test_1`: "Opciones" con borde de 4 px y "Salir" solo borde (2 px); comprobado
   leyendo píxeles de la captura (4 y 2 px exactos, sin halo). `test_deferred` 28.
-- Siguiente: R4d, recorte con pila (`push_clip_rect`/`pop_clip_rect`).
+  R4d hecho (recorte): `push_clip_rect(top_left, size)` / `pop_clip_rect()`, pila
+  en la que se guarda ya la intersección con el de debajo (`logic_error` si se
+  descuadran; `end()` cierra el lote antes de quejarse). `luxel_2d/src/clip_rect.h`
+  (sin GPU): `make_clip`, `intersect` y `classify` (Outside = ni se envía, Inside
+  = como siempre, Partial = lleva el recorte en su estilo; girado, por el círculo
+  que lo contiene). `StyleRecord` de 48 bytes con `flags` (forma / recorte: una
+  letra recortada no tiene forma redondeada); el VS pasa `world` y el PS recorta
+  con la misma rampa que la SDF, así que va en unidades del lote y no gira con
+  el quad. `test_1`: lista que se desplaza sola con dos recortes anidados (191
+  quads, 2 draws). Tests: `test_renderer2d` 12 y 13, `test_deferred` 29 (1.000
+  filas, se envían 8). Pendiente de R4: sombras, un radio por esquina y recorte
+  redondeado; los cantos de un quad girado no se suavizan (se ven dientes).
+- Siguiente, por decidir con el usuario: la librería de UI mínima con input
+  (antes hay que elegir *immediate mode* o *retained*; ver la sección UI de
+  `docs/renderers-design.md`), rasterizar TTF a mano o R5 (3D).
 - Entorno de compilación (para el asistente): desde Git Bash, cargar
   `vcvars64.bat` de VS 2026 (`C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Auxiliary\Build`)
   y `cmake --build out/build/clangcl-debug`. No hay presets de build, solo de

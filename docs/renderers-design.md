@@ -214,7 +214,7 @@ La UI se divide en dos partes que no conviene mezclar:
     (Latin-1, 32-255). HUD en la ventana de Iria.
   - Pendiente de R3: kerning, mipmaps para tamaños muy pequeños y, como hito de
     aprendizaje, rasterizar TTF a mano en vez de usar GDI.
-- **R4. Primitivas de UI** (en curso): rectángulos redondeados con SDF, bordes,
+- **R4. Primitivas de UI** (hecho): rectángulos redondeados con SDF, bordes,
   recorte. Diseño en "Decisiones de R4". Después, librería de UI mínima con
   input.
   - R4a (hecho): `begin_ui` (lote en píxeles, +Y abajo) y `draw_text` en ese
@@ -222,7 +222,10 @@ La UI se divide en dos partes que no conviene mezclar:
   - R4b (hecho): tabla de estilos y `draw_rounded_rect` con radio (SDF). El
     registro de estilo empieza en 16 bytes y crece con R4c (32) y R4d (48).
   - R4c (hecho): borde con grosor y color, también con relleno transparente.
-  - R4d: recorte con pila; demo con una lista que se desplaza en un panel.
+  - R4d (hecho): recorte con pila. Los quads de fuera ni se envían y solo los
+    que corta el borde llevan el recorte en su estilo. Demo: lista que se
+    desplaza en un panel, con recortes anidados.
+  - Con esto R4 queda completo.
 - **R5. 3D**: depth buffer, `Mesh`, materiales, una luz direccional. Después,
   carga de modelos (OBJ a mano; glTF necesita un parser de JSON, otro posible
   hito).
