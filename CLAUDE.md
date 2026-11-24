@@ -233,6 +233,9 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   sentido protegerlo solo a él mientras `submit_immediate` (pool y cola
   compartidos) sea monohilo; contrato escrito en `vulkan_memory_allocator.h`
   con el plan para cuando haya carga multihilo.
+  Pendiente del hito 8, para más adelante: llamar a `trim()` también de forma
+  periódica (p. ej. en `begin_frame`) si aparecen más rutas de subida grandes, y
+  asignaciones dedicadas si hay recursos enormes de vida larga.
 - Hecho (cámaras): `Camera2D` y `Camera3D` en `luxel/include/luxel/cameras.h`
   (pública; implementación en `luxel/src/cameras.cpp`, incluida desde
   `luxel.h`). Son solo matrices (posición, rotación en radianes, zoom y
@@ -286,8 +289,8 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   [-1, 1] (OpenGL) mientras Vulkan/D3D usan [0, 1]. `tests/test_cameras`
   (caja negra, solo API pública, sin GPU): esquinas y centro en ambos sentidos,
   +Y arriba, posición, zoom, ida y vuelta con rotación y `rotateZ` antihorario.
-- En curso: R2 de `docs/renderers-design.md`, `Renderer2D` con batching.
-  Diseño acordado (sección "Decisiones de R2"): biblioteca aparte `luxel_2d`
+- Hecho (R2 completo, R2a-R2d, `Renderer2D` con batching):
+  diseño acordado (sección "Decisiones de R2"): biblioteca aparte `luxel_2d`
   (solo API pública), `begin(frame, view_proj)` / `draw_quad(const Quad&)` /
   `end()` dentro de `begin_rendering`, `QuadInstance` de 64 bytes con las
   esquinas calculadas en el VS, `view_proj` en push constants, `stable_sort`
@@ -411,13 +414,29 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   Iria: "¡Hola, Iria!", controles y el estado (`IriaController::state_label()`)
   alineado a la derecha con `measure`, con sombra (capa 1) bajo el texto (capa
   2); 102 quads en 1 draw. `test_renderer2d` caso 7: UTF-8. Pendiente: sin
-  kerning; sin mipmaps (fuente de 48 px muy reducida puede parpadear);
-  `draw_text` asume +Y arriba (la UI en píxeles con +Y abajo, R4, tendrá que
-  tenerlo en cuenta); rasterizar TTF a mano sigue como hito de aprendizaje.
-  Pendiente del hito 8, para más
-  adelante: llamar a `trim()` también de forma periódica (p. ej. en
-  `begin_frame`) si aparecen más rutas de subida grandes, y asignaciones
-  dedicadas si hay recursos enormes de vida larga.
+  kerning; sin mipmaps (fuente de 48 px muy reducida puede parpadear); la cola
+  de la 'j' se mete en la celda de la 'i' del atlas de GDI (raya fina a la
+  derecha de cada 'i': el `padding` de 2 px se queda corto); rasterizar TTF a
+  mano sigue como hito de aprendizaje.
+- En curso: R4 de `docs/renderers-design.md`, primitivas de UI del `Renderer2D`
+  (rectángulos redondeados con SDF, bordes y recorte; la librería de widgets va
+  después). Diseño acordado (sección "Decisiones de R4"), sub-hitos R4a-R4d.
+  R4a hecho (UI en píxeles): `Renderer2D::begin_ui(frame, ancho, alto)` abre un
+  lote con (0,0) arriba a la izquierda y +Y abajo (`invalid_argument` si el
+  tamaño no es positivo; no deja el lote abierto); se cierra con `end()` como
+  cualquiera. `begin` y `begin_ui` comparten `open_batch(..., y_sign)`: +1
+  mundo, -1 UI. `luxel_2d/src/ui_space.h` (sin GPU): `ui_projection` (la
+  `orthographic` con bottom = alto y top = 0) y `glyph_center`. `y_sign` va en
+  las push constants (76 bytes): el VS calcula esquina, UV y giro con +Y arriba
+  y solo multiplica `rotated.y * y_sign` al final, así las imágenes salen
+  derechas y el giro positivo se sigue viendo antihorario; `draw_text` baja de
+  línea con `pen.y -= y_sign * size`. `test_1`: el HUD de Iria es un segundo
+  lote (1 draw más), de tamaño fijo en píxeles, con un retrato inclinado para
+  comprobar UV y giro. Tests: `test_renderer2d` 8 y 9 (ahora también ve
+  `luxel/include` por las matemáticas) y `test_deferred` 26 (mundo + UI en el
+  mismo frame).
+- Siguiente: R4b, tabla de estilos y `draw_rounded_rect` con radio (la función
+  SDF del pixel shader se le ofrece al usuario).
 - Entorno de compilación (para el asistente): desde Git Bash, cargar
   `vcvars64.bat` de VS 2026 (`C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Auxiliary\Build`)
   y `cmake --build out/build/clangcl-debug`. No hay presets de build, solo de

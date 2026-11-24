@@ -111,6 +111,37 @@ La UI se divide en dos partes que no conviene mezclar:
   pendiente: *immediate mode* (como ImGui, `if (button("OK"))` cada frame; el
   camino corto para herramientas) o *retained* (árbol de widgets persistente).
 
+### Decisiones de R4 (acordadas)
+
+1. **Datos por quad**: `QuadInstance` sigue en 64 bytes; los 4 de relleno pasan a
+   ser `style_index` (0 = sin estilo), que apunta a una **tabla de estilos** de
+   48 bytes por registro (color de borde, rectángulo de recorte, radio y
+   grosor). Quien no usa estilos no paga por ellos y un panel recortado con 200
+   letras usa un solo estilo. El pixel shader lee el estilo del buffer (no viaja
+   por interpoladores). En `end()` cada draw sube su propia tabla solo con los
+   estilos que usa, así siempre cabe en una reserva (16.384 x 48 bytes = 768 KB).
+   Descartado: agrandar el registro (los sprites pagarían datos que no usan) y
+   un segundo pipeline (rompe el lote y el orden entre botones y letras).
+2. **Recorte**: un rectángulo por quad, en el estilo y aplicado en el pixel
+   shader. Pila `push_clip_rect(top_left, size)` / `pop_clip_rect()`; dentro de
+   otro, la intersección. Como viaja con el quad, es compatible con `layer`
+   (el scissor no: cortaría el lote y habría que reordenarlo también).
+3. **Píxeles**: `begin_ui(frame, ancho, alto)`, con (0,0) arriba a la izquierda y
+   +Y abajo. Proyección y sentido de la Y van juntos a propósito (no se pueden
+   descuadrar). `y_sign` (+1 mundo, -1 UI) en las push constants: el VS lo
+   calcula todo con +Y arriba y solo lo aplica al final. El mundo y la UI son
+   dos lotes (dos draws).
+4. **API**: `draw_rounded_rect(const RoundedRect&)`, aparte de `Quad`: `top_left`,
+   `size`, `corner_radius`, `color`, `border_thickness`, `border_color`,
+   textura/sampler/UV opcionales y `layer`. Un radio para las 4 esquinas y sin
+   rotación, por ahora. El borde crece hacia dentro.
+   Suavizado: `saturate(0.5 - d / unidades_por_pixel)`, con las unidades por
+   píxel sacadas de las derivadas de la posición local
+   (`length(float2(ddx(p.x), ddy(p.x)))`), que no exageran en diagonal como
+   `fwidth(d)` y valen igual en píxeles que en unidades del mundo.
+5. **Fuera de R4** (caben después sin rehacer nada): sombras, un radio por
+   esquina, recorte redondeado.
+
 ## Renderer3D
 
 - **Mesh**: buffer de vértices (storage, leído por vertex pulling) + buffer de
@@ -181,11 +212,16 @@ La UI se divide en dos partes que no conviene mezclar:
     letra en el mismo lote, '\n', `measure` para alinear). El atlas de prueba
     lo genera `test_1` con GDI de Win32 a partir de una fuente del sistema
     (Latin-1, 32-255). HUD en la ventana de Iria.
-  - Pendiente de R3: kerning, mipmaps para tamaños muy pequeños, orientación
-    de `draw_text` con la proyección de UI en píxeles (+Y abajo, R4) y, como
-    hito de aprendizaje, rasterizar TTF a mano en vez de usar GDI.
-- **R4. Primitivas de UI**: rectángulos redondeados con SDF, bordes, recorte.
-  Después, librería de UI mínima con input.
+  - Pendiente de R3: kerning, mipmaps para tamaños muy pequeños y, como hito de
+    aprendizaje, rasterizar TTF a mano en vez de usar GDI.
+- **R4. Primitivas de UI** (en curso): rectángulos redondeados con SDF, bordes,
+  recorte. Diseño en "Decisiones de R4". Después, librería de UI mínima con
+  input.
+  - R4a (hecho): `begin_ui` (lote en píxeles, +Y abajo) y `draw_text` en ese
+    espacio. El HUD de Iria pasa a píxeles.
+  - R4b: tabla de estilos y `draw_rounded_rect` con radio (SDF).
+  - R4c: borde con grosor y color, también con relleno transparente.
+  - R4d: recorte con pila; demo con una lista que se desplaza en un panel.
 - **R5. 3D**: depth buffer, `Mesh`, materiales, una luz direccional. Después,
   carga de modelos (OBJ a mano; glTF necesita un parser de JSON, otro posible
   hito).
