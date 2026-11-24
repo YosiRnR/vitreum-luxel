@@ -1,5 +1,6 @@
 #include <luxel/renderer2d.h>
 #include "batch_order.h"
+#include "clip_rect.h"
 #include "style_table.h"
 #include "ui_space.h"
 #include "utf8.h"
@@ -43,15 +44,18 @@ namespace luxel
 	};
 
 	// Un estilo tal y como lo lee quad_ps.hlsl, en bloques de 16 bytes (Load4).
-	// Crecerá con el recorte (R4d).
 	struct Renderer2D::StyleRecord
 	{
 		// bloque 0 (bytes 0-15)
 		float corner_radius;
 		float border_thickness;
-		float padding[2];
+		uint32_t flags;             // k_style_shape y/o k_style_clip
+		uint32_t padding;
 		// bloque 1 (bytes 16-31)
 		float border_color[4];
+		// bloque 2 (bytes 32-47)
+		float clip_min[2];
+		float clip_max[2];
 
 		// Comparación campo a campo generada por el compilador (C++20): la usa
 		// add_style para reutilizar el último estilo.
@@ -86,6 +90,11 @@ namespace luxel
 		static_assert(sizeof(PushConstants) == 84);
 		static_assert(sizeof(PushConstants) % 4 == 0, "bind_constants exige múltiplo de 4");
 
+		// Qué partes del estilo aplica el shader (mismos valores en quad_ps.hlsl).
+		// Hacen falta porque una letra recortada tiene estilo pero no forma redondeada.
+		constexpr uint32_t k_style_shape = 1;
+		constexpr uint32_t k_style_clip  = 2;
+
 		// 6 vértices por quad: dos triángulos (ver la tabla de quad_vs.hlsl).
 		constexpr uint32_t k_vertices_per_quad = 6;
 	}
@@ -103,8 +112,9 @@ namespace luxel
 		static_assert(offsetof(QuadInstance, color)    == 32);
 		static_assert(offsetof(QuadInstance, rotation) == 48);
 		static_assert(offsetof(QuadInstance, style_index) == 60);
-		static_assert(sizeof(StyleRecord) == 32, "StyleRecord debe medir k_style_size (ver quad_ps.hlsl)");
+		static_assert(sizeof(StyleRecord) == 48, "StyleRecord debe medir k_style_size (ver quad_ps.hlsl)");
 		static_assert(offsetof(StyleRecord, border_color) == 16);
+		static_assert(offsetof(StyleRecord, clip_min) == 32);
 		static_assert(sizeof(StyleRecord) <= sizeof(QuadInstance),
 		              "un draw usa como mucho un estilo por quad: así su tabla cabe siempre en una reserva");
 
@@ -185,6 +195,7 @@ namespace luxel
 		m_instances.clear();
 		m_layers.clear();
 		m_styles.clear();
+		m_clip_stack.clear();
 	}
 
 	void Renderer2D::draw_quad(const Quad& quad)
@@ -192,7 +203,7 @@ namespace luxel
 		if (m_frame == nullptr) {
 			throw std::logic_error("Renderer2D::draw_quad: fuera de begin()/end()");
 		}
-		push_quad(quad, detail::k_no_style);
+		push_quad(quad, StyleRecord{});   // sin forma: solo tendrá estilo si hay que recortarlo
 	}
 
 	void Renderer2D::draw_rounded_rect(const RoundedRect& rect)
@@ -206,7 +217,7 @@ namespace luxel
 		const float max_radius = std::max(0.0f, std::min(rect.size.x, rect.size.y) * 0.5f);
 		const float radius     = std::clamp(rect.corner_radius, 0.0f, max_radius);
 
-		StyleRecord style{ .corner_radius = radius };   // lo que no se nombra queda a 0
+		StyleRecord style{ .corner_radius = radius, .flags = k_style_shape };   // lo que no se nombra queda a 0
 		if (rect.border_thickness > 0.0f)
 		{
 			// No se limita por arriba: un grosor enorme es "todo borde", sin más.
@@ -219,7 +230,6 @@ namespace luxel
 		// Sin borde, border_color queda con alfa 0: el shader no pinta nada. Además
 		// así dos rectángulos sin borde comparten estilo aunque su border_color
 		// (que no se ve) sea distinto.
-		const uint32_t style_index = detail::add_style(m_styles, style);
 
 		push_quad({
 			.position = detail::rect_center(rect.top_left, rect.size, m_y_sign),
@@ -230,11 +240,59 @@ namespace luxel
 			.uv_min   = rect.uv_min,
 			.uv_max   = rect.uv_max,
 			.layer    = rect.layer
-		}, style_index);
+		}, style);
 	}
 
-	void Renderer2D::push_quad(const Quad& quad, uint32_t style_index)
+	void Renderer2D::push_clip_rect(math::Vector2f top_left, math::Vector2f size)
 	{
+		if (m_frame == nullptr) {
+			throw std::logic_error("Renderer2D::push_clip_rect: fuera de begin()/end()");
+		}
+		// En la pila se guarda ya la intersección con el de debajo: así el de arriba
+		// es siempre el recorte completo y no hay que recorrer la pila por cada quad.
+		detail::ClipRect clip = detail::make_clip(top_left, size, m_y_sign);
+		if (!m_clip_stack.empty()) {
+			clip = detail::intersect(m_clip_stack.back(), clip);
+		}
+		m_clip_stack.push_back(clip);
+	}
+
+	void Renderer2D::pop_clip_rect()
+	{
+		if (m_frame == nullptr) {
+			throw std::logic_error("Renderer2D::pop_clip_rect: fuera de begin()/end()");
+		}
+		if (m_clip_stack.empty()) {
+			throw std::logic_error("Renderer2D::pop_clip_rect: no hay ningún recorte (falta push_clip_rect)");
+		}
+		m_clip_stack.pop_back();
+	}
+
+	void Renderer2D::push_quad(const Quad& quad, StyleRecord style)
+	{
+		// Recorte. Escenario: una lista de 1.000 filas de la que se ven 8. Las de
+		// fuera ni se envían; las de dentro van como siempre; y solo las dos que
+		// corta el borde (la primera y la última) llevan el recorte en su estilo.
+		if (!m_clip_stack.empty())
+		{
+			const detail::ClipRect& clip = m_clip_stack.back();
+			const detail::ClipResult result = detail::classify(clip, quad.position, quad.size, quad.rotation);
+			if (result == detail::ClipResult::Outside) {
+				return;
+			}
+			if (result == detail::ClipResult::Partial)
+			{
+				style.flags |= k_style_clip;
+				style.clip_min[0] = clip.min.x;
+				style.clip_min[1] = clip.min.y;
+				style.clip_max[0] = clip.max.x;
+				style.clip_max[1] = clip.max.y;
+			}
+		}
+
+		// Ni forma ni recorte: sin estilo, el camino rápido de los sprites y letras.
+		const uint32_t style_index = style.flags != 0 ? detail::add_style(m_styles, style) : detail::k_no_style;
+
 		// Si no hay textura o sampler, los del renderer. bindless_index() es el
 		// hueco de la tabla bindless: lo único que el shader necesita saber.
 		const Texture& texture = quad.texture ? *quad.texture : *m_white_texture;
@@ -314,6 +372,12 @@ namespace luxel
 		const auto quad_count = static_cast<uint32_t>(m_instances.size());
 		m_last_batch_quad_count = quad_count;
 		m_last_batch_draw_count = 0;
+
+		// Un push sin su pop: se avisa aquí, con el lote ya cerrado, en vez de
+		// dibujar con un recorte que probablemente no se quería.
+		if (!m_clip_stack.empty()) {
+			throw std::logic_error("Renderer2D::end: queda un recorte abierto (falta pop_clip_rect())");
+		}
 
 		if (quad_count == 0) {
 			return;   // nada que dibujar: ni siquiera enlazamos el pipeline

@@ -17,6 +17,7 @@ add_library(luxel_2d STATIC
     "include/luxel/bitmap_font.h"
     "src/bitmap_font.cpp"
     "src/batch_order.h"
+    "src/clip_rect.h"
     "src/style_table.h"
     "src/ui_space.h"
     "src/utf8.h"

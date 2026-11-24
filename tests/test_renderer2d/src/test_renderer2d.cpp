@@ -4,11 +4,13 @@
 //   - draw_count / draw_range: troceo de un lote grande en draws.
 //   - ui_space.h: proyección en píxeles y sitio de cada letra (hito R4a).
 //   - style_table.h: tabla de estilos (hito R4b).
+//   - clip_rect.h: recortes (hito R4d).
 //
 // La parte con GPU (que los draws salen bien y sin avisos de validación) está
 // en test_deferred (caso 25) y se ve en test_1.
 
 #include "batch_order.h"
+#include "clip_rect.h"
 #include "style_table.h"
 #include "ui_space.h"
 #include "utf8.h"
@@ -265,6 +267,61 @@ static void test_compact_styles()
 	CHECK(table.empty());
 }
 
+// 12. Recortes (R4d): de "arriba a la izquierda + tamaño" a min/max, e intersección.
+static void test_clip_rects()
+{
+	std::cout << "[12] recorte: min/max e interseccion\n";
+	using namespace luxel::detail;
+
+	// El mismo rectángulo de 200x100 en (10, 20): en la UI baja sumando Y...
+	const ClipRect ui = make_clip({ 10.0f, 20.0f }, { 200.0f, 100.0f }, k_y_down);
+	CHECK((ui.min == luxel::math::Vector2f{ 10.0f, 20.0f }));
+	CHECK((ui.max == luxel::math::Vector2f{ 210.0f, 120.0f }));
+	// ...y en el mundo, restando.
+	const ClipRect world = make_clip({ 10.0f, 20.0f }, { 200.0f, 100.0f }, k_y_up);
+	CHECK((world.min == luxel::math::Vector2f{ 10.0f, -80.0f }));
+	CHECK((world.max == luxel::math::Vector2f{ 210.0f, 20.0f }));
+
+	// Panel de x = 0 a 200 y columna de x = 150 a 300: se ve de 150 a 200.
+	const ClipRect both = intersect(ClipRect{ { 0, 0 }, { 200, 100 } }, ClipRect{ { 150, 10 }, { 300, 50 } });
+	CHECK((both.min == luxel::math::Vector2f{ 150.0f, 10.0f }));
+	CHECK((both.max == luxel::math::Vector2f{ 200.0f, 50.0f }));
+	CHECK(!both.is_empty());
+
+	// Sin solape, o con tamaño 0 o negativo: vacío.
+	CHECK((intersect(ClipRect{ { 0, 0 }, { 10, 10 } }, ClipRect{ { 50, 0 }, { 60, 10 } }).is_empty()));
+	CHECK((make_clip({ 0, 0 }, { 0.0f, 10.0f }, k_y_down).is_empty()));
+	CHECK((make_clip({ 0, 0 }, { -5.0f, 10.0f }, k_y_down).is_empty()));
+}
+
+// 13. Dentro, fuera o cortado por el borde, con un recorte de (0,0) a (100,100).
+static void test_clip_classify()
+{
+	std::cout << "[13] recorte: dentro, fuera o a medias\n";
+	using namespace luxel::detail;
+	const ClipRect clip{ { 0.0f, 0.0f }, { 100.0f, 100.0f } };
+
+	CHECK((classify(clip, { 50, 50 }, { 20, 20 }, 0.0f) == ClipResult::Inside));
+	CHECK((classify(clip, { 50, 50 }, { 100, 100 }, 0.0f) == ClipResult::Inside));    // justo del mismo tamaño
+	CHECK((classify(clip, { 50, 50 }, { 101, 100 }, 0.0f) == ClipResult::Partial));
+	CHECK((classify(clip, { 0, 50 }, { 20, 20 }, 0.0f) == ClipResult::Partial));      // a caballo del borde
+	CHECK((classify(clip, { -10, 50 }, { 20, 20 }, 0.0f) == ClipResult::Outside));    // solo toca el canto
+	CHECK((classify(clip, { 50, 300 }, { 20, 20 }, 0.0f) == ClipResult::Outside));
+	CHECK((classify(clip, { 50, 50 }, { 500, 500 }, 0.0f) == ClipResult::Partial));   // lo tapa entero
+
+	// En espejo (tamaño negativo) ocupa lo mismo.
+	CHECK((classify(clip, { 50, 50 }, { -20, 20 }, 0.0f) == ClipResult::Inside));
+
+	// Girado 45 grados, un cuadrado de 20 llega a 14.14 de su centro: en x = -12
+	// asoma por la esquina (sin girar estaría fuera) y en x = -15 ya no.
+	CHECK((classify(clip, { -12, 50 }, { 20, 20 }, 0.0f) == ClipResult::Outside));
+	CHECK((classify(clip, { -12, 50 }, { 20, 20 }, 0.785f) == ClipResult::Partial));
+	CHECK((classify(clip, { -15, 50 }, { 20, 20 }, 0.785f) == ClipResult::Outside));
+
+	// Recorte vacío: todo fuera, aunque el quad lo cubra.
+	CHECK((classify(ClipRect{ { 50, 50 }, { 50, 50 } }, { 50, 50 }, { 20, 20 }, 0.0f) == ClipResult::Outside));
+}
+
 int main()
 {
 	test_already_sorted();
@@ -278,6 +335,8 @@ int main()
 	test_glyph_center();
 	test_add_style();
 	test_compact_styles();
+	test_clip_rects();
+	test_clip_classify();
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;

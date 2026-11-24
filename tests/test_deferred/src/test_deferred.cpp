@@ -1136,6 +1136,72 @@ static void test_renderer2d_borders(vitreum::Window& window)
 	}
 }
 
+// 29. Recorte (R4d): los quads de fuera no se envian, los anidados se
+//     intersecan, funciona en el mundo y en la UI, y push/pop descuadrados
+//     lanzan logic_error sin dejar el lote abierto. Sin avisos de validacion.
+static void test_renderer2d_clip(vitreum::Window& window)
+{
+	std::cout << "[29] Renderer2D: recorte\n";
+	FrameRig rig(window);
+	luxel::Renderer2D r2d(*rig.device, rig.swapchain->color_format());
+
+	auto expect_logic_error = [](auto&& action) {
+		try { action(); } catch (const std::logic_error&) { return true; }
+		return false;
+	};
+	CHECK(expect_logic_error([&] { r2d.push_clip_rect({}, {}); }));   // sin begin
+	CHECK(expect_logic_error([&] { r2d.pop_clip_rect(); }));
+
+	for (int i = 0; i < 3; ++i)
+	{
+		auto* frame = rig.begin();
+		if (frame == nullptr) { continue; }
+		frame->commands().begin_rendering({ .clear = { 0.0f, 0.0f, 0.0f, 1.0f } });
+
+		// Lista de 1.000 filas de 40 px en un hueco de 300 (de y = 20 a 320),
+		// desplazada media fila: asoman 8 (la fila 7 empieza en 280 y la 8, en 320,
+		// ya esta fuera). Cada una, un rectangulo y un sprite.
+		r2d.begin_ui(*frame, 640.0f, 480.0f);
+		r2d.push_clip_rect({ 20, 20 }, { 200, 300 });
+		for (int row = 0; row < 1000; ++row) {
+			const float y = row * 40.0f;
+			r2d.draw_rounded_rect({ .top_left = { 20, y }, .size = { 200, 38 }, .corner_radius = 6.0f, .layer = row % 2 });
+			r2d.draw_quad({ .position = { 40, y + 19 }, .size = { 20, 20 }, .rotation = 0.3f, .layer = 2 });
+		}
+		// Anidado que no se toca con el de fuera: nada.
+		r2d.push_clip_rect({ 400, 20 }, { 50, 50 });
+		r2d.draw_quad({ .position = { 410, 30 }, .size = { 20, 20 } });
+		r2d.pop_clip_rect();
+		r2d.pop_clip_rect();
+		r2d.end();
+		CHECK(r2d.last_batch_quad_count() == 16);
+		CHECK(r2d.last_batch_draw_count() == 1);
+
+		// En el mundo (+Y arriba): el hueco va de y = 0.5 hacia ABAJO hasta -0.5.
+		r2d.begin(*frame, luxel::math::Matrix4x4::Identity());
+		r2d.push_clip_rect({ -0.5f, 0.5f }, { 1.0f, 1.0f });
+		r2d.draw_quad({ .position = { 0.0f, -0.4f }, .size = { 0.1f, 0.1f } });   // dentro
+		r2d.draw_quad({ .position = { 0.0f, 0.9f }, .size = { 0.1f, 0.1f } });    // fuera, por arriba
+		r2d.pop_clip_rect();
+		CHECK(expect_logic_error([&] { r2d.pop_clip_rect(); }));   // pop de mas
+		r2d.end();
+		CHECK(r2d.last_batch_quad_count() == 1);
+
+		// Un push sin pop: end() lanza, pero cierra el lote, y el siguiente
+		// empieza sin recorte.
+		r2d.begin_ui(*frame, 640.0f, 480.0f);
+		r2d.push_clip_rect({ 0, 0 }, { 1, 1 });
+		CHECK(expect_logic_error([&] { r2d.end(); }));
+		r2d.begin_ui(*frame, 640.0f, 480.0f);
+		r2d.draw_quad({ .position = { 300, 300 }, .size = { 10, 10 } });
+		r2d.end();
+		CHECK(r2d.last_batch_quad_count() == 1);
+
+		frame->commands().end_rendering();
+		rig.end(*frame);
+	}
+}
+
 int main()
 {
 	test_not_destroyed_immediately();
@@ -1180,6 +1246,7 @@ int main()
 	test_renderer2d_ui_batch(window);
 	test_renderer2d_rounded_rects(window);
 	test_renderer2d_borders(window);
+	test_renderer2d_clip(window);
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;

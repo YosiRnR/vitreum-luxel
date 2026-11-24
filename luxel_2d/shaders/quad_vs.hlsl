@@ -64,6 +64,7 @@ struct VSOutput
     float2 local    : TEXCOORD3;                    // posición dentro del quad, sin girar: (0,0) = centro
     nointerpolation float2 half_size : TEXCOORD4;
     nointerpolation uint style_index : TEXCOORD5;   // 0 = sin estilo (ver style_table.h)
+    float2 world    : TEXCOORD6;                    // posición en unidades del lote, para el recorte
 };
 
 VSOutput vs_main(uint vertex_id : SV_VertexID)
@@ -124,5 +125,6 @@ VSOutput vs_main(uint vertex_id : SV_VertexID)
     output.local         = local;        // antes de girar: la SDF no tiene que saber nada del giro
     output.half_size     = size * 0.5f;
     output.style_index   = extra.w;
+    output.world         = world;
     return output;
 }

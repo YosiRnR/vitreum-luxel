@@ -15,6 +15,8 @@
 
 namespace luxel
 {
+	namespace detail { struct ClipRect; }   // privado: se define en src/clip_rect.h
+
 	// Color RGBA en coma flotante, de 0 a 1. Ojo: si la swapchain es sRGB
 	// (lo habitual), estos valores son LINEALES; la GPU los convierte a sRGB al
 	// escribir. Por eso un gris 0.5 se verá más claro que el "50 %" de un
@@ -113,6 +115,21 @@ namespace luxel
 		// recortar las esquinas y pintar el borde (ver style_table.h y quad_ps.hlsl).
 		void draw_rounded_rect(const RoundedRect& rect);
 
+		// Recorte: lo que se añada entre push y pop (quads, letras, rectángulos) solo
+		// se ve dentro de este rectángulo. Se pueden anidar: un recorte dentro de
+		// otro deja ver solo la parte común. No corta el lote y es compatible con
+		// layer, porque cada quad se lleva su recorte.
+		//
+		//     r2d.push_clip_rect({ 20, 20 }, { 200, 300 });   // el hueco de la lista
+		//     ...filas y textos, aunque se salgan...
+		//     r2d.pop_clip_rect();
+		//
+		// Los quads que quedan fuera del todo ni se envían (no cuentan en
+		// last_batch_quad_count). Lanzan logic_error fuera de begin/end; pop, además,
+		// si no hay ningún recorte; y end(), si queda alguno sin cerrar.
+		void push_clip_rect(math::Vector2f top_left, math::Vector2f size);
+		void pop_clip_rect();
+
 		// Añade un texto (UTF-8) al lote: un quad por letra, con la textura del
 		// atlas de la fuente. Las letras van en el MISMO lote que el resto
 		// (bindless), así que un HUD no cuesta draws extra.
@@ -143,9 +160,6 @@ namespace luxel
 		// Lo común de begin y begin_ui.
 		void open_batch(Frame& frame, const math::Matrix4x4& view_proj, float y_sign);
 
-		// Lo común de draw_quad y draw_rounded_rect. style_index: 0 = sin estilo.
-		void push_quad(const Quad& quad, uint32_t style_index);
-
 		// El registro que llega a la GPU (64 bytes). Se define en el .cpp: es un
 		// detalle de implementación que tiene que coincidir con el shader, y la
 		// aplicación no necesita verlo. Un std::vector de un tipo incompleto
@@ -157,6 +171,9 @@ namespace luxel
 		// Lo que un sprite no necesita (radio...), en una tabla aparte. También
 		// llega a la GPU y también se define en el .cpp.
 		struct StyleRecord;
+
+		// Lo común de draw_quad y draw_rounded_rect: aplica el recorte y añade el quad.
+		void push_quad(const Quad& quad, StyleRecord style);
 
 		Ref<Device> m_device;                    // mantiene vivo el device mientras exista el renderer
 		Ref<GraphicsPipeline> m_pipeline;
@@ -172,6 +189,7 @@ namespace luxel
 		std::vector<StyleRecord> m_styles;       // tabla de estilos del lote entero
 		std::vector<StyleRecord> m_draw_styles;  // los que usa el draw que se está preparando
 		std::vector<uint32_t> m_style_remap;     // memoria de trabajo de compact_styles
+		std::vector<detail::ClipRect> m_clip_stack;   // el de arriba es el recorte activo (ya intersecado)
 
 		Frame* m_frame{ nullptr };               // != nullptr <=> hay un lote abierto
 		math::Matrix4x4 m_view_proj{};

@@ -27,7 +27,11 @@ SamplerState bindless_samplers[];
 Texture2D<float4> bindless_textures[];
 
 // Tamaño de StyleRecord en bytes (static_assert en renderer2d.cpp).
-static const uint k_style_size = 32;
+static const uint k_style_size = 48;
+
+// Qué partes del estilo hay que aplicar (mismos valores que en renderer2d.cpp).
+static const uint k_style_shape = 1;   // forma redondeada y borde (draw_rounded_rect)
+static const uint k_style_clip  = 2;   // recorte (push_clip_rect)
 
 struct PSInput
 {
@@ -39,6 +43,7 @@ struct PSInput
     float2 local    : TEXCOORD3;                    // dónde está este píxel dentro del quad: (0,0) = centro
     nointerpolation float2 half_size : TEXCOORD4;   // la mitad del tamaño del quad
     nointerpolation uint style_index : TEXCOORD5;   // 0 = sin estilo
+    float2 world    : TEXCOORD6;                    // dónde está este píxel en unidades del lote
 };
 
 // ----------------------------------------------------------------------------
@@ -114,31 +119,54 @@ float4 ps_main(PSInput input) : SV_Target
     // El slot no lleva NonUniformResourceIndex: viene de las push constants.
     ByteAddressBuffer styles = bindless_buffers[push_constants.styles_slot];
     const uint base = push_constants.styles_offset + (input.style_index - 1) * k_style_size;
-    const float4 shape        = asfloat(styles.Load4(base));        // x = radio, y = grosor del borde, zw = relleno
+    const uint4  block0       = styles.Load4(base);                 // x = radio, y = grosor (bits de float), z = flags
     const float4 border_color = asfloat(styles.Load4(base + 16));
+    const float4 clip         = asfloat(styles.Load4(base + 32));   // xy = min, zw = max
 
-    // --- Forma ------------------------------------------------------------------
-    const float d = sd_rounded_box(input.local, input.half_size, shape.x);
+    const float corner_radius    = asfloat(block0.x);
+    const float border_thickness = asfloat(block0.y);
+    const uint  flags            = block0.z;
 
-    // Cobertura: cuánto del píxel cae dentro, según la distancia de su centro al
-    // borde medida en píxeles. A medio píxel hacia dentro, 1; justo en el borde,
-    // 0.5; a medio píxel hacia fuera, 0. Esa rampa de un píxel es el suavizado.
-    const float coverage = saturate(0.5f - d / units_per_pixel);
+    if (flags & k_style_shape)
+    {
+        // --- Forma --------------------------------------------------------------
+        const float d = sd_rounded_box(input.local, input.half_size, corner_radius);
 
-    // --- Borde ------------------------------------------------------------------
-    // El borde es la franja entre d = -grosor y d = 0: crece hacia DENTRO, así que
-    // el botón sigue midiendo lo mismo. "in_border" es la misma rampa de antes,
-    // pero colocada en el canto interior (d = -grosor) y al revés: 0 en el
-    // relleno, 1 en la franja. Con un borde de 2 px:
-    //     d = -5   -> saturate(0.5 - 3)   = 0     relleno
-    //     d = -2   -> saturate(0.5 + 0)   = 0.5   justo en el canto interior
-    //     d = -1   -> saturate(0.5 + 1)   = 1     borde
-    // Sin borde (grosor 0) el C++ manda border_color con alfa 0 y blend_over
-    // devuelve el relleno tal cual: no hace falta un if.
-    const float in_border = saturate(0.5f + (d + shape.y) / units_per_pixel);
-    color = blend_over(float4(border_color.rgb, border_color.a * in_border), color);
+        // Cobertura: cuánto del píxel cae dentro, según la distancia de su centro
+        // al borde medida en píxeles. A medio píxel hacia dentro, 1; justo en el
+        // borde, 0.5; a medio píxel hacia fuera, 0. Esa rampa de un píxel es el
+        // suavizado.
+        const float coverage = saturate(0.5f - d / units_per_pixel);
 
-    // El recorte de la forma va lo último: vale para el relleno y para el borde.
-    color.a *= coverage;
+        // --- Borde --------------------------------------------------------------
+        // El borde es la franja entre d = -grosor y d = 0: crece hacia DENTRO, así
+        // que el botón sigue midiendo lo mismo. "in_border" es la misma rampa de
+        // antes, pero colocada en el canto interior (d = -grosor) y al revés: 0 en
+        // el relleno, 1 en la franja. Con un borde de 2 px:
+        //     d = -5   -> saturate(0.5 - 3)   = 0     relleno
+        //     d = -2   -> saturate(0.5 + 0)   = 0.5   justo en el canto interior
+        //     d = -1   -> saturate(0.5 + 1)   = 1     borde
+        // Sin borde (grosor 0) el C++ manda border_color con alfa 0 y blend_over
+        // devuelve el relleno tal cual: no hace falta un if.
+        const float in_border = saturate(0.5f + (d + border_thickness) / units_per_pixel);
+        color = blend_over(float4(border_color.rgb, border_color.a * in_border), color);
+
+        // La forma va después del borde: vale para el relleno y para el borde.
+        color.a *= coverage;
+    }
+
+    if (flags & k_style_clip)
+    {
+        // --- Recorte ------------------------------------------------------------
+        // Cuánto se sale el píxel por cada lado, como en la SDF: negativo dentro.
+        // Por la izquierda o arriba, min - p; por la derecha o abajo, p - max; y
+        // manda el lado por el que más se sale. Ejemplo: recorte de x = 100 a 300;
+        // en x = 310 -> max(100 - 310, 310 - 300) = +10, fuera.
+        // La rampa es la misma: en un recorte a píxeles enteros el corte es nítido
+        // y en uno a medio píxel queda suavizado.
+        const float2 outside = max(clip.xy - input.world, input.world - clip.zw);
+        color.a *= saturate(0.5f - max(outside.x, outside.y) / units_per_pixel);
+    }
+
     return color;
 }
