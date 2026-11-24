@@ -5,6 +5,8 @@ project(test_1 LANGUAGES CXX)
 add_executable(test_1
     src/test_1.cpp
     "src/stb_image.h"
+    "src/keyboard_state.h"
+    "src/iria_controller.h"
 )
 
 target_link_libraries(test_1

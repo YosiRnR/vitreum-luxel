@@ -16,6 +16,8 @@
 #include <span>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+#include "keyboard_state.h"
+#include "iria_controller.h"
 
 
 static luxel::WindowHandle to_luxel(const vitreum::NativeWindowHandle& win_handle)
@@ -112,6 +114,7 @@ struct RenderWindow
 	SceneKind kind{ SceneKind::Stress };
 	std::string base_title;             // el título sin las estadísticas
 	FrameStats stats{};
+	KeyboardState keyboard{};           // teclas de ESTA ventana (Windows solo manda teclas a la que tiene el foco)
 };
 
 // Recursos que se dibujan en todas las ventanas. El pipeline, los shaders y el
@@ -128,35 +131,6 @@ struct Scene
 	luxel::Ref<luxel::Texture> background;      // tests/assets/forest_00001_.png
 	float background_aspect{ 1.0f };
 };
-
-// Hoja de sprites de Iria: 1536x2048, rejilla de 6 columnas x 8 filas de
-// celdas de 256x256. Los fotogramas se numeran por filas desde arriba a la
-// izquierda (la celda n está en la columna n % 6 y la fila n / 6). Cada
-// animación es un rango de celdas consecutivas. Las 2 últimas celdas (46 y 47)
-// están vacías. Iria corre mirando a la DERECHA y tiene los pies casi en el
-// borde de abajo de cada celda: el quad se apoya en el suelo por su lado de abajo.
-constexpr uint32_t k_iria_columns = 6;
-constexpr uint32_t k_iria_rows    = 8;
-
-struct SpriteAnimation
-{
-	uint32_t first_cell;   // primera celda de la hoja
-	uint32_t frame_count;  // cuántas celdas seguidas
-	float fps;             // fotogramas por segundo
-};
-
-constexpr SpriteAnimation k_iria_run { .first_cell =  0, .frame_count = 21, .fps = 24.0f };
-constexpr SpriteAnimation k_iria_idle{ .first_cell = 21, .frame_count = 13, .fps = 10.0f };
-constexpr SpriteAnimation k_iria_jump{ .first_cell = 34, .frame_count = 12, .fps = 10.0f };
-
-// Celda que toca mostrar de una animación tras "seconds" segundos reproduciéndola.
-// loop = false: se queda en el último fotograma al terminar.
-static uint32_t animation_cell(const SpriteAnimation& anim, float seconds, bool loop = true)
-{
-	uint32_t frame = static_cast<uint32_t>(seconds * anim.fps);
-	frame = loop ? frame % anim.frame_count : std::min(frame, anim.frame_count - 1);
-	return anim.first_cell + frame;
-}
 
 // Hoja de sprites de prueba: 4x4 celdas de 8x8 píxeles (textura de 32x32).
 // Cada celda es un "fotograma" de una animación: un fondo de color propio con
@@ -324,6 +298,9 @@ static void process_events(RenderWindow& render_window)
 			continue;
 		}
 
+		// Teclas y foco: el KeyboardState se queda con lo que le interesa.
+		render_window.keyboard.on_event(*event);
+
 		if (event->type == vitreum::WinEventType::Close)
 		{
 			// WM_CLOSE ya dejó should_close a true. Si la ventana pide confirmación,
@@ -429,69 +406,41 @@ static void draw_sprite_sheet_scene(luxel::Renderer2D& r2d, const Scene& scene, 
 	});
 }
 
-// Iria en el bosque. El fondo cubre la vista y Iria repite un ciclo:
-//   1) entra corriendo desde fuera por la izquierda hasta el centro,
-//   2) se para (idle),
-//   3) salta,
-//   4) sale corriendo por la derecha.
+// Medidas de Iria en la escena (unidades del mundo; la cámara mide 2 de alto).
+constexpr float k_iria_sprite_size = 0.9f;    // la celda es cuadrada (256x256): el quad también
+constexpr float k_iria_ground_y    = -0.72f;  // altura de los pies (a ojo, sobre el camino del bosque)
+
+// Límites del CENTRO de Iria para que no se salga de la vista por los lados.
+static float iria_max_x(float view_width)
+{
+	return std::max(0.0f, view_width * 0.5f - k_iria_sprite_size * 0.4f);   // 0.4: el dibujo no llena la celda
+}
+
+// Iria en el bosque, en la posición y con el fotograma que diga su controlador
+// (que mueve el teclado: ver el bucle de main). La escena solo DIBUJA.
 // view_width: ancho visible en unidades del mundo (2 * aspecto de la ventana).
 //
 // Ojo: el fondo se envía DESPUÉS de Iria a propósito. Sin capas, el fondo
 // (enviado el último) la taparía; con layer = -1 el Renderer2D lo ordena y lo
 // dibuja primero. Es la prueba visual de R2d.
-static void draw_iria_scene(luxel::Renderer2D& r2d, const Scene& scene, float time, float view_width)
+static void draw_iria_scene(luxel::Renderer2D& r2d, const Scene& scene, const IriaController& iria, float view_width)
 {
-	// --- Ciclo de Iria ---------------------------------------------------------
-	constexpr float run_in_time  = 3.0f;
-	constexpr float idle_time    = 3.0f;
-	const     float jump_time    = static_cast<float>(k_iria_jump.frame_count) / k_iria_jump.fps;   // 1.2 s
-	constexpr float run_out_time = 3.0f;
-	const     float cycle_time   = run_in_time + idle_time + jump_time + run_out_time;
-
-	constexpr float sprite_size = 0.9f;    // la celda es cuadrada (256x256): el quad también
-	constexpr float ground_y    = -0.72f;  // altura de los pies (a ojo, sobre el camino del bosque)
-	const     float offscreen_x = view_width * 0.5f + sprite_size * 0.5f;   // justo fuera de la vista
-
-	float t = std::fmod(time, cycle_time);   // segundos dentro del ciclo actual
-	uint32_t cell = 0;
-	float x = 0.0f;
-	float jump_height = 0.0f;
-
-	if (t < run_in_time) {
-		cell = animation_cell(k_iria_run, t);
-		x = -offscreen_x + offscreen_x * (t / run_in_time);   // de -offscreen_x a 0
-	}
-	else if ((t -= run_in_time) < idle_time) {
-		cell = animation_cell(k_iria_idle, t);
-	}
-	else if ((t -= idle_time) < jump_time) {
-		cell = animation_cell(k_iria_jump, t, false);
-		// En la hoja, el salto es: agacharse (celdas 34-35), en el aire (36-39),
-		// aterrizar (40-41) y erguirse (42-45). Los dibujos no suben dentro de
-		// su celda, así que la altura la ponemos nosotros: un arco (media onda
-		// de seno) mientras está en el aire, de 0.2 s a 0.6 s del salto.
-		constexpr float air_start = 0.2f;
-		constexpr float air_time  = 0.4f;
-		if (t > air_start && t < air_start + air_time) {
-			jump_height = 0.35f * std::sin(3.14159265f * (t - air_start) / air_time);
-		}
-	}
-	else {
-		t -= jump_time;
-		cell = animation_cell(k_iria_run, t);
-		x = offscreen_x * (t / run_out_time);   // de 0 a offscreen_x
-	}
-
+	// --- Iria --------------------------------------------------------------------
 	luxel::math::Vector2f uv_min{};
 	luxel::math::Vector2f uv_max{};
-	sprite_sheet_uv(cell, k_iria_columns, k_iria_rows, uv_min, uv_max);
-	// Para que mirase a la IZQUIERDA bastaría con intercambiar uv_min.x y
-	// uv_max.x: la textura se lee al revés en horizontal (espejo gratis).
+	sprite_sheet_uv(iria.cell(), k_iria_columns, k_iria_rows, uv_min, uv_max);
+
+	// Mirando a la izquierda: espejo horizontal gratis intercambiando las U.
+	// La textura se lee al revés en horizontal; la hoja solo tiene a Iria
+	// corriendo hacia la derecha y así no hace falta dibujarla dos veces.
+	if (iria.facing_left()) {
+		std::swap(uv_min.x, uv_max.x);
+	}
 
 	r2d.draw_quad({
-		// position es el CENTRO: para apoyar los pies en ground_y se sube medio quad.
-		.position = { x, ground_y + sprite_size * 0.5f + jump_height },
-		.size     = { sprite_size, sprite_size },
+		// position es el CENTRO: para apoyar los pies en el suelo se sube medio quad.
+		.position = { iria.x(), k_iria_ground_y + k_iria_sprite_size * 0.5f + iria.height() },
+		.size     = { k_iria_sprite_size, k_iria_sprite_size },
 		.texture  = scene.iria_sheet.get(),
 		.uv_min   = uv_min,
 		.uv_max   = uv_max,
@@ -535,7 +484,7 @@ static void update_stats(RenderWindow& render_window, double cpu_ms, uint32_t qu
 // Un frame completo en una ventana. Si no se puede pintar (swapchain obsoleta o
 // recreándose) simplemente no hace nada: ya se volverá a intentar en la vuelta siguiente.
 static void render_window_frame(luxel::Device& device, luxel::Renderer2D& r2d, RenderWindow& render_window,
-                                const Scene& scene, float time)
+                                const Scene& scene, const IriaController& iria, float time)
 {
 	auto* frame = device.begin_frame(*render_window.swapchain);
 	if (frame == nullptr) {
@@ -561,7 +510,7 @@ static void render_window_frame(luxel::Device& device, luxel::Renderer2D& r2d, R
 	{
 	case SceneKind::Stress:      draw_stress_scene(r2d, scene, time);       break;
 	case SceneKind::SpriteSheet: draw_sprite_sheet_scene(r2d, scene, time); break;
-	case SceneKind::Iria:        draw_iria_scene(r2d, scene, time, 2.0f * aspect); break;
+	case SceneKind::Iria:        draw_iria_scene(r2d, scene, iria, 2.0f * aspect); break;
 	}
 
 	r2d.end();
@@ -591,7 +540,9 @@ int main(int argc, char** argv)
 	std::vector<std::unique_ptr<RenderWindow>> windows;
 	windows.push_back(make_render_window(*render_device, "Vitreum Window",       { 1920, 1080 }, { 0.05f, 0.05f, 0.08f, 1.0f }, true,  SceneKind::Stress));
 	windows.push_back(make_render_window(*render_device, "Second Vitreum Window", {  800,  600 }, { 0.15f, 0.15f, 0.20f, 1.0f }, false, SceneKind::SpriteSheet));
-	windows.push_back(make_render_window(*render_device, "Iria",                  { 1280,  720 }, { 0.0f,  0.0f,  0.0f,  1.0f }, false, SceneKind::Iria));
+	// (Títulos solo en ASCII: los acentos en títulos están aparcados en vitreum.)
+	windows.push_back(make_render_window(*render_device, "Iria - flechas o A/D: mover, espacio o W: saltar",
+	                                     { 1280,  720 }, { 0.0f,  0.0f,  0.0f,  1.0f }, false, SceneKind::Iria));
 
 	const auto color_format = windows.front()->swapchain->color_format();
 	const auto extent       = windows.front()->swapchain->extent();
@@ -608,11 +559,19 @@ int main(int argc, char** argv)
 	for (auto& render_window : windows) {
 		render_window->window.show();
 	}
+	// El teclado va a la ventana con el foco: se lo damos a la de Iria para
+	// poder jugar nada más arrancar.
+	windows.back()->window.request_focus();
+
+	// Lógica de juego de Iria. Vive fuera de las ventanas: el estado del juego
+	// no es de ninguna ventana (si se cerrase la de Iria, el resto sigue igual).
+	IriaController iria;
 
 	// Tiempo real desde el arranque: las animaciones van a la misma velocidad
 	// sea cual sea la tasa de refresco del monitor (antes, angle += 0.025 por
 	// vuelta iba más rápido en un monitor de 144 Hz que en uno de 60).
 	const auto start_time = std::chrono::steady_clock::now();
+	auto last_time = start_time;
 
 	// El programa termina cuando se cierra la última ventana.
 	while (!windows.empty())
@@ -638,12 +597,42 @@ int main(int argc, char** argv)
 			continue;
 		}
 
-		const float time = std::chrono::duration<float>(std::chrono::steady_clock::now() - start_time).count();
+		const auto now = std::chrono::steady_clock::now();
+		const float time = std::chrono::duration<float>(now - start_time).count();
+		// dt: segundos desde la vuelta anterior, para la física. Se limita a
+		// 50 ms: tras estar minimizada (wait_events) o parada en un breakpoint,
+		// un dt enorme haría que Iria atravesase el suelo o saliera disparada.
+		const float dt = std::min(std::chrono::duration<float>(now - last_time).count(), 0.05f);
+		last_time = now;
+
+		// --- Juego: leer la entrada de la ventana de Iria y avanzar la simulación ---
+		// Primero se actualiza el juego y después se dibuja: así el frame
+		// muestra el estado de ESTA vuelta, no el de la anterior.
+		for (auto& render_window : windows)
+		{
+			if (render_window->kind != SceneKind::Iria) {
+				continue;
+			}
+			using vitreum::KeyCode;
+			const auto& keys = render_window->keyboard;
+			const IriaInput input{
+				.left  = keys.is_down(KeyCode::LeftArrow)  || keys.is_down(KeyCode::A),
+				.right = keys.is_down(KeyCode::RightArrow) || keys.is_down(KeyCode::D),
+				.jump  = keys.was_pressed(KeyCode::Space)  || keys.was_pressed(KeyCode::W) || keys.was_pressed(KeyCode::UpArrow)
+			};
+			const float view_width = render_window->window.height() > 0
+				? 2.0f * static_cast<float>(render_window->window.width()) / static_cast<float>(render_window->window.height())
+				: 2.0f;
+			iria.update(dt, input, -iria_max_x(view_width), iria_max_x(view_width));
+		}
+
 		for (auto& render_window : windows)
 		{
 			if (!render_window->window.is_minimized()) {
-				render_window_frame(*render_device, r2d, *render_window, scene, time);
+				render_window_frame(*render_device, r2d, *render_window, scene, iria, time);
 			}
+			// Lo "pulsado en este frame" ya se ha leído: se limpia para la vuelta siguiente.
+			render_window->keyboard.end_frame();
 		}
 	}
 
