@@ -107,9 +107,10 @@ La UI se divide en dos partes que no conviene mezclar:
     por quad;
   - texto: atlas de glifos, cada letra es un quad.
 - **Librería de UI** (capa de motor): layout, widgets, foco, clics y estado.
-  Consume eventos de `vitreum` y emite rectángulos al `Renderer2D`. Decisión
-  pendiente: *immediate mode* (como ImGui, `if (button("OK"))` cada frame; el
-  camino corto para herramientas) o *retained* (árbol de widgets persistente).
+  Consume eventos de `vitreum` y emite rectángulos al `Renderer2D`. Decidido:
+  *retained* (árbol de widgets persistente), redibujado entero en cada frame, y
+  no *immediate mode* (como ImGui, `if (button("OK"))` cada frame). Diseño en
+  `docs/ui-design.md`.
 
 ### Decisiones de R4 (acordadas)
 

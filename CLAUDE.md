@@ -34,6 +34,8 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
 - Diseño completo del RHI de luxel en `docs/rhi-design.md` (léelo antes de tocar luxel).
 - Capas por encima del RHI (Renderer2D, Renderer3D, UI, escena) y su plan de
   hitos (R1-R6) en `docs/renderers-design.md`.
+- Librería de UI (`luxel_ui`, widgets *retained* redibujados enteros en cada
+  frame) y sus hitos (U1-U5) en `docs/ui-design.md`.
 - Capas de luxel: API pública en `luxel/include/luxel/` (solo puede incluir
   otras cabeceras públicas o std; nunca Vulkan); privado en `luxel/src/`,
   con backends en `luxel/src/backends/<api>/`.
@@ -471,9 +473,8 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   quads, 2 draws). Tests: `test_renderer2d` 12 y 13, `test_deferred` 29 (1.000
   filas, se envían 8). Pendiente de R4: sombras, un radio por esquina y recorte
   redondeado; los cantos de un quad girado no se suavizan (se ven dientes).
-- Siguiente, por decidir con el usuario: la librería de UI mínima con input
-  (antes hay que elegir *immediate mode* o *retained*; ver la sección UI de
-  `docs/renderers-design.md`), rasterizar TTF a mano o R5 (3D).
+- Siguiente: U1 de `docs/ui-design.md` (árbol de widgets y ratón). Aparcado para
+  después: rasterizar TTF a mano y R5 (3D).
 - Entorno de compilación (para el asistente): desde Git Bash, cargar
   `vcvars64.bat` de VS 2026 (`C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Auxiliary\Build`)
   y `cmake --build out/build/clangcl-debug`. No hay presets de build, solo de
