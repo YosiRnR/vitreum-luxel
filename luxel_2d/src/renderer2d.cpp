@@ -42,12 +42,16 @@ namespace luxel
 		uint32_t style_index;   // 0 = sin estilo (ocupa lo que era relleno: siguen siendo 64 bytes)
 	};
 
-	// Un estilo tal y como lo lee quad_ps.hlsl. El relleno lo deja en 16 bytes;
-	// crecerá con el borde (R4c) y el recorte (R4d), de 16 en 16.
+	// Un estilo tal y como lo lee quad_ps.hlsl, en bloques de 16 bytes (Load4).
+	// Crecerá con el recorte (R4d).
 	struct Renderer2D::StyleRecord
 	{
+		// bloque 0 (bytes 0-15)
 		float corner_radius;
-		float padding[3];
+		float border_thickness;
+		float padding[2];
+		// bloque 1 (bytes 16-31)
+		float border_color[4];
 
 		// Comparación campo a campo generada por el compilador (C++20): la usa
 		// add_style para reutilizar el último estilo.
@@ -99,7 +103,8 @@ namespace luxel
 		static_assert(offsetof(QuadInstance, color)    == 32);
 		static_assert(offsetof(QuadInstance, rotation) == 48);
 		static_assert(offsetof(QuadInstance, style_index) == 60);
-		static_assert(sizeof(StyleRecord) == 16, "StyleRecord debe medir k_style_size (ver quad_ps.hlsl)");
+		static_assert(sizeof(StyleRecord) == 32, "StyleRecord debe medir k_style_size (ver quad_ps.hlsl)");
+		static_assert(offsetof(StyleRecord, border_color) == 16);
 		static_assert(sizeof(StyleRecord) <= sizeof(QuadInstance),
 		              "un draw usa como mucho un estilo por quad: así su tabla cabe siempre en una reserva");
 
@@ -201,7 +206,20 @@ namespace luxel
 		const float max_radius = std::max(0.0f, std::min(rect.size.x, rect.size.y) * 0.5f);
 		const float radius     = std::clamp(rect.corner_radius, 0.0f, max_radius);
 
-		const uint32_t style = detail::add_style(m_styles, StyleRecord{ .corner_radius = radius, .padding = {} });
+		StyleRecord style{ .corner_radius = radius };   // lo que no se nombra queda a 0
+		if (rect.border_thickness > 0.0f)
+		{
+			// No se limita por arriba: un grosor enorme es "todo borde", sin más.
+			style.border_thickness = rect.border_thickness;
+			style.border_color[0] = rect.border_color.r;
+			style.border_color[1] = rect.border_color.g;
+			style.border_color[2] = rect.border_color.b;
+			style.border_color[3] = rect.border_color.a;
+		}
+		// Sin borde, border_color queda con alfa 0: el shader no pinta nada. Además
+		// así dos rectángulos sin borde comparten estilo aunque su border_color
+		// (que no se ve) sea distinto.
+		const uint32_t style_index = detail::add_style(m_styles, style);
 
 		push_quad({
 			.position = detail::rect_center(rect.top_left, rect.size, m_y_sign),
@@ -212,7 +230,7 @@ namespace luxel
 			.uv_min   = rect.uv_min,
 			.uv_max   = rect.uv_max,
 			.layer    = rect.layer
-		}, style);
+		}, style_index);
 	}
 
 	void Renderer2D::push_quad(const Quad& quad, uint32_t style_index)

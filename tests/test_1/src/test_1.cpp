@@ -529,16 +529,19 @@ static void draw_iria_hud(luxel::Renderer2D& r2d, const Scene& scene, const Iria
 	// --- Panel con botones (R4b) ---------------------------------------------------
 	// Cada rectángulo redondeado es un quad más del lote. Tres radios para ver la
 	// SDF: 4 (casi recto), 14, y 100, que se limita a 24 (medio alto) y da una cápsula.
+	// Bordes (R4c): sin borde, de 4 px, y solo borde (relleno transparente, a propósito
+	// "negro con alfa 0": si la mezcla estuviera mal, se vería un halo oscuro).
 	const luxel::math::Vector2f panel_size{ 260.0f, 218.0f };
 	const luxel::math::Vector2f panel{ width - margin - panel_size.x, height - margin - panel_size.y };
 	r2d.draw_rounded_rect({ .top_left = panel, .size = panel_size, .corner_radius = 24.0f,
-	                        .color = { 0.02f, 0.05f, 0.10f, 0.75f }, .layer = 0 });
+	                        .color = { 0.02f, 0.05f, 0.10f, 0.75f }, .border_thickness = 1.0f,
+	                        .border_color = { 1.0f, 1.0f, 1.0f, 0.35f }, .layer = 0 });
 
-	struct Button { std::u8string_view label; float radius; luxel::Color color; };
+	struct Button { std::u8string_view label; float radius; luxel::Color color; float border; luxel::Color border_color; };
 	const Button buttons[] = {
-		{ u8"Jugar",    4.0f,   { 0.05f, 0.35f, 0.80f, 1.0f } },
-		{ u8"Opciones", 14.0f,  { 0.10f, 0.50f, 0.20f, 1.0f } },
-		{ u8"Salir",    100.0f, { 0.70f, 0.10f, 0.10f, 1.0f } },
+		{ u8"Jugar",    4.0f,   { 0.05f, 0.35f, 0.80f, 1.0f }, 0.0f, {} },
+		{ u8"Opciones", 14.0f,  { 0.10f, 0.50f, 0.20f, 1.0f }, 4.0f, { 0.60f, 1.00f, 0.60f, 1.0f } },
+		{ u8"Salir",    100.0f, { 0.00f, 0.00f, 0.00f, 0.0f }, 2.0f, { 1.00f, 1.00f, 1.00f, 1.0f } },
 	};
 	const luxel::math::Vector2f button_size{ 220.0f, 48.0f };
 	const float label_size = 30.0f;
@@ -546,7 +549,8 @@ static void draw_iria_hud(luxel::Renderer2D& r2d, const Scene& scene, const Iria
 	for (const Button& button : buttons)
 	{
 		r2d.draw_rounded_rect({ .top_left = at, .size = button_size, .corner_radius = button.radius,
-		                        .color = button.color, .layer = 1 });
+		                        .color = button.color, .border_thickness = button.border,
+		                        .border_color = button.border_color, .layer = 1 });
 		// Texto centrado: el hueco que sobra, repartido a los dos lados.
 		const float label_width = font.measure(button.label) * (label_size / font.line_height());
 		r2d.draw_text(font, button.label,

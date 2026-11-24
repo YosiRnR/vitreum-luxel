@@ -27,7 +27,7 @@ SamplerState bindless_samplers[];
 Texture2D<float4> bindless_textures[];
 
 // Tamaño de StyleRecord en bytes (static_assert en renderer2d.cpp).
-static const uint k_style_size = 16;
+static const uint k_style_size = 32;
 
 struct PSInput
 {
@@ -59,6 +59,26 @@ float sd_rounded_box(float2 p, float2 half_size, float radius)
 {
     float2 q = abs(p) - half_size + radius;
     return length(max(q, 0)) + min(max(q.x, q.y), 0) - radius;
+}
+
+// Pone "top" encima de "bottom" (los dos con alfa, sin premultiplicar).
+//
+// Es lo mismo que hace el blending de la GPU con lo que ya hay en pantalla, pero
+// aquí entre el borde y el relleno, y sin saber aún qué hay detrás. Cada color
+// pesa lo que se ve de él: top, su alfa; bottom, lo que top deja ver del suyo.
+//
+// Escenario: borde blanco a la mitad (alfa 0.5) sobre un relleno "negro, alfa 0":
+//   mezclando sin pesos:  (blanco + negro) / 2 = gris       <- halo sucio
+//   con pesos:            (1*0.5 + 0*0) / 0.5  = blanco, con alfa 0.5   <- bien
+// Un relleno que no se ve no puede ensuciar, sea cual sea su RGB.
+float4 blend_over(float4 top, float4 bottom)
+{
+    const float bottom_weight = bottom.a * (1.0f - top.a);
+    const float alpha = top.a + bottom_weight;
+    // max: si los dos son transparentes, alpha es 0 y no se puede dividir (el
+    // color da igual: no se va a ver).
+    const float3 rgb = (top.rgb * top.a + bottom.rgb * bottom_weight) / max(alpha, 0.0001f);
+    return float4(rgb, alpha);
 }
 
 float4 ps_main(PSInput input) : SV_Target
@@ -94,7 +114,8 @@ float4 ps_main(PSInput input) : SV_Target
     // El slot no lleva NonUniformResourceIndex: viene de las push constants.
     ByteAddressBuffer styles = bindless_buffers[push_constants.styles_slot];
     const uint base = push_constants.styles_offset + (input.style_index - 1) * k_style_size;
-    const float4 shape = asfloat(styles.Load4(base));   // x = radio, yzw = relleno
+    const float4 shape        = asfloat(styles.Load4(base));        // x = radio, y = grosor del borde, zw = relleno
+    const float4 border_color = asfloat(styles.Load4(base + 16));
 
     // --- Forma ------------------------------------------------------------------
     const float d = sd_rounded_box(input.local, input.half_size, shape.x);
@@ -103,6 +124,21 @@ float4 ps_main(PSInput input) : SV_Target
     // borde medida en píxeles. A medio píxel hacia dentro, 1; justo en el borde,
     // 0.5; a medio píxel hacia fuera, 0. Esa rampa de un píxel es el suavizado.
     const float coverage = saturate(0.5f - d / units_per_pixel);
+
+    // --- Borde ------------------------------------------------------------------
+    // El borde es la franja entre d = -grosor y d = 0: crece hacia DENTRO, así que
+    // el botón sigue midiendo lo mismo. "in_border" es la misma rampa de antes,
+    // pero colocada en el canto interior (d = -grosor) y al revés: 0 en el
+    // relleno, 1 en la franja. Con un borde de 2 px:
+    //     d = -5   -> saturate(0.5 - 3)   = 0     relleno
+    //     d = -2   -> saturate(0.5 + 0)   = 0.5   justo en el canto interior
+    //     d = -1   -> saturate(0.5 + 1)   = 1     borde
+    // Sin borde (grosor 0) el C++ manda border_color con alfa 0 y blend_over
+    // devuelve el relleno tal cual: no hace falta un if.
+    const float in_border = saturate(0.5f + (d + shape.y) / units_per_pixel);
+    color = blend_over(float4(border_color.rgb, border_color.a * in_border), color);
+
+    // El recorte de la forma va lo último: vale para el relleno y para el borde.
     color.a *= coverage;
     return color;
 }

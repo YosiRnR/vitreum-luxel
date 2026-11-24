@@ -53,6 +53,8 @@ namespace luxel
 		math::Vector2f size{ 1.0f, 1.0f };
 		float corner_radius{ 0.0f };            // se limita a la mitad del lado corto (ahí ya es una cápsula)
 		Color color{};                          // se multiplica por la textura, si la hay
+		float border_thickness{ 0.0f };         // 0 = sin borde. Crece hacia DENTRO: size es el tamaño total
+		Color border_color{ 0.0f, 0.0f, 0.0f, 1.0f };   // se pinta encima del relleno (que puede ser transparente)
 		Texture* texture{ nullptr };            // nullptr = color liso
 		Sampler* sampler{ nullptr };
 		math::Vector2f uv_min{ 0.0f, 0.0f };
@@ -108,7 +110,7 @@ namespace luxel
 
 		// Añade un rectángulo redondeado. Va en el mismo lote que los quads y las
 		// letras: es un quad más, con un "estilo" que el pixel shader usa para
-		// recortar las esquinas (ver style_table.h y quad_ps.hlsl).
+		// recortar las esquinas y pintar el borde (ver style_table.h y quad_ps.hlsl).
 		void draw_rounded_rect(const RoundedRect& rect);
 
 		// Añade un texto (UTF-8) al lote: un quad por letra, con la textura del

@@ -1101,6 +1101,41 @@ static void test_renderer2d_rounded_rects(vitreum::Window& window)
 	}
 }
 
+// 28. Bordes (R4c): grosores normales, finisimos, negativos y mayores que el
+//     rectangulo, con relleno opaco y transparente; sin avisos de validacion.
+//     El aspecto se ve en test_1.
+static void test_renderer2d_borders(vitreum::Window& window)
+{
+	std::cout << "[28] Renderer2D: bordes\n";
+	FrameRig rig(window);
+	luxel::Renderer2D r2d(*rig.device, rig.swapchain->color_format());
+
+	const float thicknesses[] = { 0.0f, 0.5f, 1.0f, 4.0f, -3.0f, 1000.0f };
+
+	for (int i = 0; i < 3; ++i)
+	{
+		auto* frame = rig.begin();
+		if (frame == nullptr) { continue; }
+
+		frame->commands().begin_rendering({ .clear = { 0.0f, 0.0f, 0.0f, 1.0f } });
+		r2d.begin_ui(*frame, 640.0f, 480.0f);
+		float y = 10.0f;
+		for (const float thickness : thicknesses)
+		{
+			r2d.draw_rounded_rect({ .top_left = { 10, y }, .size = { 100, 40 }, .corner_radius = 8.0f,
+			                        .border_thickness = thickness, .border_color = { 1, 0, 0, 1 } });
+			r2d.draw_rounded_rect({ .top_left = { 120, y }, .size = { 100, 40 }, .corner_radius = 8.0f,
+			                        .color = { 0, 0, 0, 0 }, .border_thickness = thickness, .border_color = { 1, 1, 1, 0.5f } });
+			y += 50.0f;
+		}
+		r2d.end();
+		CHECK(r2d.last_batch_quad_count() == 12);
+		CHECK(r2d.last_batch_draw_count() == 1);
+		frame->commands().end_rendering();
+		rig.end(*frame);
+	}
+}
+
 int main()
 {
 	test_not_destroyed_immediately();
@@ -1144,6 +1179,7 @@ int main()
 	test_renderer2d_big_batch(window);
 	test_renderer2d_ui_batch(window);
 	test_renderer2d_rounded_rects(window);
+	test_renderer2d_borders(window);
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;
