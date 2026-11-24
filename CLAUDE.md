@@ -373,6 +373,22 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   `test_deferred` enlaza ya con `luxel_2d`). `test_1`: estrés de 150x150 =
   22.500 quads en 2 draws (2,4 ms de CPU en Debug) y, en la escena de Iria, el
   fondo se envía DESPUÉS de Iria con `layer = -1` (sale detrás).
+- Hecho (Iria con teclado, en `test_1`; vitreum no cambió: ya emitía
+  `KeyPress`/`KeyRepeat`/`KeyRelease` con `KeyCode` y `FocusLost`):
+  `tests/test_1/src/keyboard_state.h` (`KeyboardState` por ventana:
+  `is_down` mantenida, `was_pressed` solo en el frame de la pulsación,
+  `end_frame()` lo limpia, `KeyRepeat` se ignora y `FocusLost` suelta todo
+  para que no se atasquen teclas) e `iria_controller.h` (`IriaController`,
+  lógica de juego sin render ni teclado: estados Ground/Crouch/Air/Land,
+  física con gravedad deducida de altura y tiempo hasta el punto más alto,
+  control en el aire, celda de la hoja por estado; en el aire, por velocidad
+  vertical; ahí se mudaron `SpriteAnimation`, `animation_cell` y `k_iria_*`).
+  El bucle de `main` calcula `dt` (limitado a 50 ms), actualiza el
+  controlador con la entrada de la ventana de Iria ANTES de dibujar y
+  después llama a `end_frame()` en cada ventana. Flechas o A/D mueven;
+  espacio, W o flecha arriba saltan; mirar a la izquierda = intercambiar
+  `uv_min.x`/`uv_max.x`. La ventana de Iria recibe el foco al arrancar.
+  Títulos de ventana solo en ASCII (UTF-8 en títulos sigue aparcado).
   Pendiente del hito 8, para más
   adelante: llamar a `trim()` también de forma periódica (p. ej. en
   `begin_frame`) si aparecen más rutas de subida grandes, y asignaciones
