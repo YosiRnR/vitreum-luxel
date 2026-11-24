@@ -64,8 +64,8 @@ FontAtlasImage make_gdi_font_atlas(const std::wstring& face_name, int pixel_heig
 
 	// Margen alrededor de cada glifo: algunas letras se salen un poco de su
 	// avance (la cola de la 'j', la 'f' en cursiva...) y el filtrado lineal mira
-	// el píxel de al lado. 2 px de margen evitan que se cuele la celda vecina.
-	const uint32_t padding = 2;
+	// el píxel de al lado. 4 px de margen evitan que se cuele la celda vecina.
+	const uint32_t padding = 4;
 	const uint32_t cell_w  = static_cast<uint32_t>(widest) + 2 * padding + 2;   // +2 por los glifos que sobresalen
 	const uint32_t cell_h  = static_cast<uint32_t>(metrics.tmHeight) + 2 * padding;
 	const uint32_t columns = 16;
