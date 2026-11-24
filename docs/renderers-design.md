@@ -221,7 +221,7 @@ La UI se divide en dos partes que no conviene mezclar:
     espacio. El HUD de Iria pasa a píxeles.
   - R4b (hecho): tabla de estilos y `draw_rounded_rect` con radio (SDF). El
     registro de estilo empieza en 16 bytes y crece con R4c (32) y R4d (48).
-  - R4c: borde con grosor y color, también con relleno transparente.
+  - R4c (hecho): borde con grosor y color, también con relleno transparente.
   - R4d: recorte con pila; demo con una lista que se desplaza en un panel.
 - **R5. 3D**: depth buffer, `Mesh`, materiales, una luz direccional. Después,
   carga de modelos (OBJ a mano; glTF necesita un parser de JSON, otro posible

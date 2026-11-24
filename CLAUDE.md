@@ -451,7 +451,15 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   `if`. `test_1`: panel con tres botones (radios 4, 14 y cápsula) en el HUD de
   Iria. Tests: `test_renderer2d` 10 y 11, `test_deferred` 27 (40.000 mezclados
   = 3 draws con su tabla).
-- Siguiente: R4c, borde con grosor y color (también con relleno transparente).
+  R4c hecho (bordes): `border_thickness` (0 = sin borde, crece hacia dentro) y
+  `border_color` en `RoundedRect`; `StyleRecord` pasa a 32 bytes. En el PS,
+  `in_border = saturate(0.5 + (d + grosor) / units_per_pixel)` y `blend_over`
+  (borde sobre relleno ponderando cada color por su alfa: un relleno
+  transparente no deja halo); la cobertura de la forma se aplica al final. Sin
+  borde el C++ manda alfa 0 (sin `if` en el shader, y así comparten estilo).
+  `test_1`: "Opciones" con borde de 4 px y "Salir" solo borde (2 px); comprobado
+  leyendo píxeles de la captura (4 y 2 px exactos, sin halo). `test_deferred` 28.
+- Siguiente: R4d, recorte con pila (`push_clip_rect`/`pop_clip_rect`).
 - Entorno de compilación (para el asistente): desde Git Bash, cargar
   `vcvars64.bat` de VS 2026 (`C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Auxiliary\Build`)
   y `cmake --build out/build/clangcl-debug`. No hay presets de build, solo de
