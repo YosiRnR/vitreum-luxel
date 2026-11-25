@@ -1,6 +1,6 @@
 # Diseño de la librería de UI (`luxel_ui`)
 
-> **Estado: U1 hecho; siguiente, U2.** Las decisiones están numeradas
+> **Estado: U1 y U2 hechos; siguiente, U3.** Las decisiones están numeradas
 > (D1-D9) para poder hablar de ellas una a una.
 
 Widgets (botones, listas, cajas de texto, paneles) por encima del `Renderer2D`,
@@ -165,7 +165,7 @@ Cada uno acaba en algo visible. Entre paréntesis, la parte más formativa.
 - **U1. Árbol y ratón. (Hecho.)** `Widget`, `Ui`, eventos propios y `to_ui`, `Painter`,
   `Panel` y `Label`. Demo: paneles anidados que se iluminan bajo el ratón.
   (*Hit test*: una función recursiva de unas 10 líneas.)
-- **U2. Botón.** Captura, clic, subida de eventos y borrado aplazado. Demo: los
+- **U2. Botón. (Hecho.)** Captura, clic, subida de eventos y borrado aplazado. Demo: los
   botones de Iria funcionan; "Salir" cierra la ventana. (El estado del botón:
   normal, encima, pulsado, pulsado pero con el ratón fuera.)
 - **U3. Layout.** `Row`, `Column`, `Stack`, márgenes, separación y `grow`. Demo: el
@@ -188,7 +188,7 @@ ratón fuera de la ventana), rueda, teclado y `CharInput`. Falta o conviene revi
 |---|---|---|
 | Aviso de que el ratón sale de la ventana (`WM_MOUSELEAVE`) | U1 | si no, el último widget se queda iluminado |
 | `MouseScroll` no trae posición | U4 | la UI usa la del último movimiento; vale |
-| `ReleaseCapture` al soltar cualquier botón | U2 | con dos botones pulsados, soltar uno pierde la captura del otro |
+| `ReleaseCapture` solo al soltar el último botón (hecho en U2) | U2 | con dos botones pulsados, soltar uno perdía la captura del otro |
 | `CharInput` manda también teclas de control (Retroceso = 8) | U5 | filtrarlas en la UI |
 | `CharInput` manda los emoji en dos mitades UTF-16 | U5 | juntarlas en vitreum |
 | Cursor de texto y de redimensionar | U5 | hoy solo la flecha |

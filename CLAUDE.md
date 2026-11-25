@@ -484,13 +484,33 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   `draw()` con su propio lote `begin_ui`). `src/hit_test.cpp` (la función la
   escribió el usuario): hijos del último al primero, aunque el punto esté fuera
   del padre si este no recorta. El hover se recalcula también en `update()` (el
-  ratón quieto y el widget que se mueve). Hay que hacer el layout a mano hasta U3
-  y no se pueden borrar widgets hasta U2. vitreum: evento `MouseLeave`
+  ratón quieto y el widget que se mueve). Hay que hacer el layout a mano hasta U3.
+  vitreum: evento `MouseLeave`
   (`TrackMouseEvent` cada vez que el ratón entra). `test_1`: `ui_events.h`
   (`to_ui`; `FocusLost` también apaga el hover) e `iria_menu.h` (el menú de Iria,
   tercer lote). `tests/test_ui` (caja blanca, sin GPU, 7 casos).
-- Siguiente: U2 de `docs/ui-design.md` (botón: captura, clic, subida de eventos y
-  borrado aplazado). Aparcado para después: rasterizar TTF a mano y R5 (3D).
+- Hecho (U2, botón): eventos `MouseDown`, `MouseUp` y `MouseCancel` (este anula la
+  pulsación: `to_ui` lo manda con `FocusLost`, por el Alt+Tab) y `ui::MouseButton`.
+  `Widget`: `on_mouse_down` (true = "es para mí" y captura; false = se prueba con el
+  padre), `on_mouse_up`/`on_mouse_cancel` (solo al que capturó, una de las dos).
+  Con captura solo se ilumina el que la tiene y los demás botones del ratón se
+  ignoran; `MouseLeave` no la pierde. Soltar lo que se apretó fuera de la UI es del
+  juego (`on_event` devuelve false). `Button` (en `widgets.h`, lógica en
+  `src/button.cpp`, escrita por el usuario): un solo dato, `m_pressed`, que con
+  `hovered()` da los cuatro `ButtonState`; `ButtonStyle` (normal/hover/pressed) en
+  el `Theme` o propio. Trampas vistas: `m_pressed = false` ANTES de `on_click`, y un
+  botón sin `on_click` acepta igual la pulsación (si no, subiría al panel).
+  `Widget::remove()`: se oculta ya y deja un rastro (`m_removed_below`) hasta la
+  raíz; `Ui::destroy_removed()` destruye al acabar el evento más externo (`m_depth`)
+  o al empezar `update()`, y vacía `m_hovered`/`m_captured` si apuntaban ahí. Los
+  punteros que guarde la aplicación los vacía ella. vitreum: `ReleaseCapture` solo
+  con el último botón y `TrackMouseEvent` no se pide con captura. `test_1`: el menú
+  de Iria funciona ("Jugar" lo esconde y Escape lo devuelve, "Opciones" abre un
+  diálogo que se quita a sí mismo, "Salir" cierra su ventana). `test_ui`: 13 casos.
+  Pendiente: `Window::cancel_close(true)` pide el cierre (nombre engañoso; merece un
+  `request_close()`).
+- Siguiente: U3 de `docs/ui-design.md` (layout: `Row`, `Column`, `Stack`, márgenes,
+  separación y `grow`). Aparcado para después: rasterizar TTF a mano y R5 (3D).
 - Entorno de compilación (para el asistente): desde Git Bash, cargar
   `vcvars64.bat` de VS 2026 (`C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Auxiliary\Build`)
   y `cmake --build out/build/clangcl-debug`. No hay presets de build, solo de
