@@ -559,7 +559,7 @@ static void draw_iria_hud(luxel::Renderer2D& r2d, const Scene& scene, const Iria
 
 	shadowed_text(u8"¡Hola, Iria!", { margin, margin }, 80.0f, { 1.0f, 0.85f, 0.35f, 1.0f });
 	// El '\n' comprueba que la segunda línea cae debajo también con +Y abajo.
-	shadowed_text(u8"Flechas o A/D: correr\nEspacio: saltar", { margin, margin + 94.0f }, 32.0f, { 1.0f, 1.0f, 1.0f, 1.0f });
+	shadowed_text(u8"Flechas o A/D: correr\nEspacio: saltar\nEsc: mostrar el menú", { margin, margin + 94.0f }, 32.0f, { 1.0f, 1.0f, 1.0f, 1.0f });
 
 	// Estado, alineado a la derecha con measure(): ancho de la fuente * escala.
 	const float state_size  = 44.0f;
@@ -697,7 +697,11 @@ int main(int argc, char** argv)
 
 	// El menú usa la fuente de la escena, que se destruye después que él: las
 	// ventanas se vacían al cerrar la última, antes de que acabe main.
-	windows.back()->menu = std::make_unique<IriaMenu>(scene.font.get());
+	RenderWindow& iria_window = *windows.back();
+	iria_window.menu = std::make_unique<IriaMenu>(scene.font.get());
+	// "Salir" solo PIDE el cierre (pese al nombre, cancel_close(true) lo marca): la
+	// ventana, y con ella este botón, se destruyen en el bucle, no en mitad del clic.
+	iria_window.menu->on_quit = [&iria_window] { iria_window.window.cancel_close(true); };
 
 	// Un Renderer2D para todas las ventanas: su pipeline sirve para cualquier
 	// swapchain con este formato de color (aquí, todas). Cada ventana abre y
@@ -763,6 +767,9 @@ int main(int argc, char** argv)
 			}
 			using vitreum::KeyCode;
 			const auto& keys = render_window->keyboard;
+			if (keys.was_pressed(KeyCode::Escape)) {
+				render_window->menu->show();   // por si "Jugar" lo escondió
+			}
 			const IriaInput input{
 				.left  = keys.is_down(KeyCode::LeftArrow)  || keys.is_down(KeyCode::A),
 				.right = keys.is_down(KeyCode::RightArrow) || keys.is_down(KeyCode::D),

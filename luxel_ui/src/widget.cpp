@@ -1,5 +1,6 @@
 #include <luxel/ui/widget.h>
 #include <luxel/ui/painter.h>
+#include <cassert>
 
 namespace luxel::ui
 {
@@ -21,6 +22,18 @@ namespace luxel::ui
 		}
 		if (m_clips_children) {
 			painter.pop_clip();
+		}
+	}
+
+	void Widget::remove()
+	{
+		assert(m_parent != nullptr && "la raíz no se puede quitar");
+		m_removed = true;
+		m_visible = false;   // ni se pinta ni recibe el ratón: para el usuario ya no está
+
+		// Deja un rastro hasta la raíz para que Ui sepa por dónde bajar a buscarlo.
+		for (Widget* up = m_parent; up != nullptr; up = up->m_parent) {
+			up->m_removed_below = true;
 		}
 	}
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <luxel/ui/event.h>
 #include <luxel/ui/geometry.h>
 #include <concepts>
 #include <memory>
@@ -40,6 +41,16 @@ namespace luxel::ui
 			return reference;
 		}
 
+		// Quita el widget (y todos los de debajo). Desaparece de la pantalla y del
+		// ratón al momento, pero se DESTRUYE más tarde: cuando Ui termina de repartir
+		// el evento, o en el siguiente Ui::update().
+		//
+		// Escenario: el botón "Cerrar" de un diálogo hace dialog.remove() en su
+		// on_click. Si se destruyera ya, el botón moriría a mitad de su propia
+		// función. Es la misma idea que la DeletionQueue de luxel, con la CPU en el
+		// papel de la GPU. No vale para la raíz.
+		void remove();
+
 		Widget* parent() const { return m_parent; }
 		const std::vector<std::unique_ptr<Widget>>& children() const { return m_children; }
 
@@ -64,6 +75,7 @@ namespace luxel::ui
 
 		// ¿Es el widget que tiene el ratón justo encima? Solo lo es uno: el más
 		// profundo (si el ratón está en un botón, el panel que lo contiene no).
+		// Durante una pulsación solo puede serlo el que la capturó.
 		bool hovered() const { return m_hovered; }
 
 		// Se pinta a sí mismo, sin sus hijos. Por defecto, nada.
@@ -77,8 +89,18 @@ namespace luxel::ui
 		virtual void on_mouse_enter() {}
 		virtual void on_mouse_leave() {}
 
+		// Han apretado un botón del ratón encima. Devolver true = "es para mí": captura
+		// el ratón y on_mouse_up (o on_mouse_cancel) le llegará a él, esté donde esté el
+		// ratón. Con false se le pregunta a su padre, y así hacia arriba.
+		virtual bool on_mouse_down(const Event&) { return false; }
+
+		// Solo le llegan al que capturó, una de las dos y una sola vez por pulsación.
+		// En on_mouse_up, hovered() dice si se ha soltado encima de él.
+		virtual void on_mouse_up(const Event&) {}
+		virtual void on_mouse_cancel() {}
+
 	private:
-		friend class Ui;   // es quien decide quién tiene el ratón encima
+		friend class Ui;   // reparte el ratón y destruye los quitados
 		void set_hovered(bool hovered);
 
 		std::vector<std::unique_ptr<Widget>> m_children;
@@ -88,6 +110,9 @@ namespace luxel::ui
 		bool m_ignores_mouse{ false };
 		bool m_clips_children{ false };
 		bool m_hovered{ false };
+		bool m_removed{ false };         // se ha llamado a remove(): pendiente de destruir
+		bool m_removed_below{ false };   // hay alguno así más abajo. Evita recorrer el árbol
+		                                 // entero en cada evento para buscarlos
 	};
 
 } // namespace luxel::ui

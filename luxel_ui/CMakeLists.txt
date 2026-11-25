@@ -19,6 +19,7 @@ add_library(luxel_ui STATIC
     "src/painter.cpp"
     "src/widget.cpp"
     "src/widgets.cpp"
+    "src/button.cpp"
     "src/hit_test.h"
     "src/hit_test.cpp"
     "src/ui.cpp"

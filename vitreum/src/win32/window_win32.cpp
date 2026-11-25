@@ -568,8 +568,10 @@ namespace vitreum
             case WM_MOUSEMOVE:
             {
                 // WM_MOUSELEAVE no llega solo: hay que pedirlo con TrackMouseEvent
-                // cada vez que el ratón entra en la ventana.
-                if (!this_window->tracking_mouse_leave)
+                // cada vez que el ratón entra en la ventana. Con un botón apretado no:
+                // gracias a la captura seguimos recibiendo movimientos desde fuera, y
+                // pedirlo allí contestaría "ha salido" en cada uno.
+                if (!this_window->tracking_mouse_leave && GetCapture() != hwnd)
                 {
                     TRACKMOUSEEVENT track{};
                     track.cbSize    = sizeof(track);
@@ -671,7 +673,13 @@ namespace vitreum
             case WM_MBUTTONUP:
             case WM_RBUTTONUP:
             {
-                ReleaseCapture();
+                // Solo al soltar el ÚLTIMO botón. Escenario: izquierdo y derecho
+                // apretados; si al soltar el derecho se perdiese la captura, soltar el
+                // izquierdo fuera de la ventana no nos llegaría nunca.
+                // (wparam dice qué botones SIGUEN apretados.)
+                if ((wparam & (MK_LBUTTON | MK_MBUTTON | MK_RBUTTON)) == 0) {
+                    ReleaseCapture();
+                }
                 WinEvent event{ WinEventType::MouseButtonRelease };
                 event.mouse_button.xpos = static_cast<short>(LOWORD(lparam));
                 event.mouse_button.ypos = static_cast<short>(HIWORD(lparam));
