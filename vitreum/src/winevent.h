@@ -13,6 +13,7 @@ namespace vitreum
 		KeyRepeat,
 		KeyRelease,
 		MouseMove,
+		MouseLeave,   // el raton ha salido de la ventana
 		MouseButtonPress,
 		MouseButtonRelease,
 		MouseScroll,

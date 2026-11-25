@@ -19,6 +19,8 @@
 #include "keyboard_state.h"
 #include "iria_controller.h"
 #include "gdi_font_atlas.h"
+#include "iria_menu.h"
+#include "ui_events.h"
 
 
 static luxel::WindowHandle to_luxel(const vitreum::NativeWindowHandle& win_handle)
@@ -115,6 +117,7 @@ struct RenderWindow
 	SceneKind kind{ SceneKind::Stress };
 	std::string base_title;             // el título sin las estadísticas
 	FrameStats stats{};
+	std::unique_ptr<IriaMenu> menu;     // solo la ventana de Iria
 	KeyboardState keyboard{};           // teclas de ESTA ventana (Windows solo manda teclas a la que tiene el foco)
 };
 
@@ -324,6 +327,14 @@ static void process_events(RenderWindow& render_window)
 		// Teclas y foco: el KeyboardState se queda con lo que le interesa.
 		render_window.keyboard.on_event(*event);
 
+		// Ratón: a la UI, si esta ventana tiene.
+		if (render_window.menu)
+		{
+			if (const auto ui_event = to_ui(*event)) {
+				render_window.menu->on_event(*ui_event);
+			}
+		}
+
 		if (event->type == vitreum::WinEventType::Close)
 		{
 			// WM_CLOSE ya dejó should_close a true. Si la ventana pide confirmación,
@@ -529,7 +540,8 @@ static void draw_scroll_list(luxel::Renderer2D& r2d, const luxel::BitmapFont& fo
 //
 // Diferencia con tenerlo en el mundo (como en R3a): al agrandar la ventana, el
 // bosque crece con ella, pero las letras siguen midiendo los mismos píxeles.
-static void draw_iria_hud(luxel::Renderer2D& r2d, const Scene& scene, const IriaController& iria, float width, float height, float time)
+static void draw_iria_hud(luxel::Renderer2D& r2d, const Scene& scene, const IriaController& iria, float width, float height,
+                          const luxel::ui::Rect& menu, float time)
 {
 	if (!scene.font) {
 		return;
@@ -567,41 +579,8 @@ static void draw_iria_hud(luxel::Renderer2D& r2d, const Scene& scene, const Iria
 	r2d.draw_quad({ .position = center, .size = { portrait, portrait }, .rotation = 0.15f,
 	                .texture = scene.iria_sheet.get(), .uv_min = uv_min, .uv_max = uv_max, .layer = 1 });
 
-	// --- Panel con botones (R4b) ---------------------------------------------------
-	// Cada rectángulo redondeado es un quad más del lote. Tres radios para ver la
-	// SDF: 4 (casi recto), 14, y 100, que se limita a 24 (medio alto) y da una cápsula.
-	// Bordes (R4c): sin borde, de 4 px, y solo borde (relleno transparente, a propósito
-	// "negro con alfa 0": si la mezcla estuviera mal, se vería un halo oscuro).
-	const luxel::math::Vector2f panel_size{ 260.0f, 218.0f };
-	const luxel::math::Vector2f panel{ width - margin - panel_size.x, height - margin - panel_size.y };
-	r2d.draw_rounded_rect({ .top_left = panel, .size = panel_size, .corner_radius = 24.0f,
-	                        .color = { 0.02f, 0.05f, 0.10f, 0.75f }, .border_thickness = 1.0f,
-	                        .border_color = { 1.0f, 1.0f, 1.0f, 0.35f }, .layer = 0 });
-
-	struct Button { std::u8string_view label; float radius; luxel::Color color; float border; luxel::Color border_color; };
-	const Button buttons[] = {
-		{ u8"Jugar",    4.0f,   { 0.05f, 0.35f, 0.80f, 1.0f }, 0.0f, {} },
-		{ u8"Opciones", 14.0f,  { 0.10f, 0.50f, 0.20f, 1.0f }, 4.0f, { 0.60f, 1.00f, 0.60f, 1.0f } },
-		{ u8"Salir",    100.0f, { 0.00f, 0.00f, 0.00f, 0.0f }, 2.0f, { 1.00f, 1.00f, 1.00f, 1.0f } },
-	};
-	const luxel::math::Vector2f button_size{ 220.0f, 48.0f };
-	const float label_size = 30.0f;
-	luxel::math::Vector2f at{ panel.x + 20.0f, panel.y + 20.0f };
-	for (const Button& button : buttons)
-	{
-		r2d.draw_rounded_rect({ .top_left = at, .size = button_size, .corner_radius = button.radius,
-		                        .color = button.color, .border_thickness = button.border,
-		                        .border_color = button.border_color, .layer = 1 });
-		// Texto centrado: el hueco que sobra, repartido a los dos lados.
-		const float label_width = font.measure(button.label) * (label_size / font.line_height());
-		r2d.draw_text(font, button.label,
-		              { at.x + (button_size.x - label_width) * 0.5f, at.y + (button_size.y - label_size) * 0.5f },
-		              label_size, { 1.0f, 1.0f, 1.0f, 1.0f }, 2);
-		at.y += button_size.y + 17.0f;
-	}
-
-	// --- Lista con recorte (R4d), encima del panel de botones ---
-	draw_scroll_list(r2d, font, { panel.x, panel.y - 20.0f - 220.0f }, { panel_size.x, 220.0f }, time);
+	// --- Lista con recorte (R4d), encima del menú (que ahora son widgets: IriaMenu) ---
+	draw_scroll_list(r2d, font, { menu.x, menu.y - 20.0f - 220.0f }, { menu.width, 220.0f }, time);
 }
 
 // Promedia el tiempo de CPU del lote y lo pone en el título cada medio segundo.
@@ -667,8 +646,14 @@ static void render_window_frame(luxel::Device& device, luxel::Renderer2D& r2d, R
 		const float width  = static_cast<float>(extent.width);
 		const float height = static_cast<float>(extent.height);
 		r2d.begin_ui(*frame, width, height);
-		draw_iria_hud(r2d, scene, iria, width, height, time);
+		render_window.menu->layout(width, height);
+		draw_iria_hud(r2d, scene, iria, width, height, render_window.menu->panel_rect(), time);
 		r2d.end();
+		quad_count += r2d.last_batch_quad_count();
+		draw_count += r2d.last_batch_draw_count();
+
+		// Tercer lote: los widgets, encima de todo.
+		render_window.menu->draw(r2d, *frame);
 		quad_count += r2d.last_batch_quad_count();
 		draw_count += r2d.last_batch_draw_count();
 	}
@@ -709,6 +694,10 @@ int main(int argc, char** argv)
 	std::cout << std::format("Color Format: {}\n", static_cast<uint8_t>(color_format));
 
 	Scene scene = create_scene(*render_device);
+
+	// El menú usa la fuente de la escena, que se destruye después que él: las
+	// ventanas se vacían al cerrar la última, antes de que acabe main.
+	windows.back()->menu = std::make_unique<IriaMenu>(scene.font.get());
 
 	// Un Renderer2D para todas las ventanas: su pipeline sirve para cualquier
 	// swapchain con este formato de color (aquí, todas). Cada ventana abre y

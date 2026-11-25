@@ -93,6 +93,7 @@ namespace vitreum
         Window* owner{ nullptr };
 
         CursorMode cursor_mode{ CursorMode::Normal };
+        bool tracking_mouse_leave{ false };   // ya se ha pedido a Windows el próximo WM_MOUSELEAVE
         // Para restaurar el clip al salir de Disabled
         bool cursor_clipped{ false };
         RECT prev_clip_rect{};
@@ -556,8 +557,27 @@ namespace vitreum
                 return 0;
             }
 
+            case WM_MOUSELEAVE:
+            {
+                // Windows avisa una sola vez por petición: al volver a entrar habrá que pedirlo otra vez.
+                this_window->tracking_mouse_leave = false;
+                this_window->accumulated_events.push_back(WinEvent{ WinEventType::MouseLeave });
+                return 0;
+            }
+
             case WM_MOUSEMOVE:
             {
+                // WM_MOUSELEAVE no llega solo: hay que pedirlo con TrackMouseEvent
+                // cada vez que el ratón entra en la ventana.
+                if (!this_window->tracking_mouse_leave)
+                {
+                    TRACKMOUSEEVENT track{};
+                    track.cbSize    = sizeof(track);
+                    track.dwFlags   = TME_LEAVE;
+                    track.hwndTrack = hwnd;
+                    this_window->tracking_mouse_leave = TrackMouseEvent(&track) != FALSE;
+                }
+
                 const int x = static_cast<short>(LOWORD(lparam));
                 const int y = static_cast<short>(HIWORD(lparam));
 
