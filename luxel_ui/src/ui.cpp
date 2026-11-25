@@ -123,7 +123,8 @@ namespace luxel::ui
 		destroy_removed();
 
 		DepthGuard guard(m_depth);
-		m_root.set_rect({ 0.0f, 0.0f, width, height });
+		m_root.measure(m_theme);                           // de abajo arriba: ¿cuánto queréis?
+		m_root.arrange({ 0.0f, 0.0f, width, height });     // de arriba abajo: esto es lo que hay
 		refresh_hover();
 	}
 

@@ -2,6 +2,7 @@
 
 // Los widgets básicos: Panel, Label y Button.
 
+#include <luxel/ui/layout.h>
 #include <luxel/ui/painter.h>
 #include <luxel/ui/widget.h>
 #include <functional>
@@ -11,12 +12,14 @@
 namespace luxel::ui
 {
 	// Un rectángulo con fondo y borde. Con un segundo estilo puede cambiar de
-	// aspecto cuando tiene el ratón encima.
-	class Panel : public Widget
+	// aspecto cuando tiene el ratón encima. Coloca a sus hijos como un Stack (con
+	// uno solo, lo normal: el contenido, dentro de su set_padding).
+	class Panel : public Stack
 	{
 	public:
-		explicit Panel(const BoxStyle& style) : m_style(style) {}
-		Panel(const BoxStyle& style, const BoxStyle& hover_style) : m_style(style), m_hover_style(hover_style) {}
+		explicit Panel(const BoxStyle& style) : m_style(style) { set_ignores_mouse(false); }
+		Panel(const BoxStyle& style, const BoxStyle& hover_style)
+			: m_style(style), m_hover_style(hover_style) { set_ignores_mouse(false); }
 
 		void draw(Painter& painter) const override;
 
@@ -38,6 +41,9 @@ namespace luxel::ui
 		void set_text(std::u8string text) { m_text = std::move(text); }
 
 		void draw(Painter& painter) const override;
+
+	protected:
+		math::Vector2f measure_content(const Theme& theme) override;
 
 	private:
 		std::u8string m_text;
@@ -71,6 +77,7 @@ namespace luxel::ui
 		void draw(Painter& painter) const override;
 
 	protected:
+		math::Vector2f measure_content(const Theme& theme) override;
 		bool on_mouse_down(const Event& event) override;
 		void on_mouse_up(const Event& event) override;
 		void on_mouse_cancel() override;

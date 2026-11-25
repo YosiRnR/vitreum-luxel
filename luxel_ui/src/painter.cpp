@@ -21,13 +21,13 @@ namespace luxel::ui
 		}
 	}
 
-	math::Vector2f Painter::measure(std::u8string_view text, float size) const
+	math::Vector2f measure_text(const Theme& theme, std::u8string_view text, float size)
 	{
-		if (m_theme.font == nullptr) {
+		if (theme.font == nullptr) {
 			return { 0.0f, size };
 		}
 		// measure() da píxeles de la fuente; la escala es la misma que en draw_text.
-		return { m_theme.font->measure(text) * (size / m_theme.font->line_height()), size };
+		return { theme.font->measure(text) * (size / theme.font->line_height()), size };
 	}
 
 	void Painter::push_clip(const Rect& rect) { m_renderer.push_clip_rect(rect.top_left(), rect.size()); }

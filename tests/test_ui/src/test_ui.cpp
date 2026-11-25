@@ -1,11 +1,14 @@
-// Pruebas de luxel_ui (hitos U1 y U2), sin ventana ni GPU: se inventan los eventos del
-// ratón y se mira qué widget lo tiene encima. Solo usa la API pública: el hit
-// test se prueba a través de Ui.
+// Pruebas de luxel_ui (hitos U1 a U3), sin ventana ni GPU: se inventan los eventos del
+// ratón y se mira qué widget lo tiene encima. Casi todo con la API pública
+// (el hit test se prueba a través de Ui); de luxel_ui/src solo ve distribute.h.
 
+#include "distribute.h"
 #include <luxel/ui/ui.h>
 #include <luxel/ui/widgets.h>
+#include <cmath>
 #include <iostream>
 #include <string>
+#include <vector>
 
 using namespace luxel::ui;
 
@@ -58,6 +61,22 @@ namespace
 	{
 		return ui.on_event({ .type = EventType::MouseUp, .position = { x, y }, .button = button });
 	}
+
+	// Un sitio donde colocar widgets a mano con set_rect. Hace falta porque la raíz es
+	// un Stack (colocaría ella a sus hijos); un Widget normal los deja donde estén.
+	Widget& free_area(Ui& ui)
+	{
+		auto& area = ui.root().add<Widget>();
+		area.set_ignores_mouse(true);
+		return area;
+	}
+
+	// Un widget que pide un tamaño fijo, para probar el layout sin fuente.
+	class Fixed : public Widget
+	{
+	public:
+		Fixed(float width, float height, float grow = 0.0f) { set_min_size({ width, height }); set_grow(grow); }
+	};
 
 	// Mueve el ratón y devuelve lo que queda debajo.
 	Widget* at(Ui& ui, float x, float y)
@@ -113,7 +132,8 @@ static void test_hit_test()
 	std::cout << "[3] hit test: hijos, solapes y textos\n";
 	Ui ui;
 	ui.update(800, 600);
-	auto& panel = ui.root().add<Box>(Rect{ 0, 0, 200, 200 });
+	auto& area = free_area(ui);
+	auto& panel = area.add<Box>(Rect{ 0, 0, 200, 200 });
 	auto& a     = panel.add<Box>(Rect{ 10, 10, 100, 40 });
 	auto& b     = panel.add<Box>(Rect{ 80, 10, 100, 40 });
 	auto& label = panel.add<Label>(u8"hola");
@@ -132,8 +152,9 @@ static void test_visibility()
 	std::cout << "[4] hit test: invisibles y contenedores que ignoran el raton\n";
 	Ui ui;
 	ui.update(800, 600);
-	auto& below     = ui.root().add<Box>(Rect{ 0, 0, 100, 100 });
-	auto& container = ui.root().add<Box>(Rect{ 0, 0, 100, 100 });
+	auto& area = free_area(ui);
+	auto& below     = area.add<Box>(Rect{ 0, 0, 100, 100 });
+	auto& container = area.add<Box>(Rect{ 0, 0, 100, 100 });
 	auto& child     = container.add<Box>(Rect{ 10, 10, 20, 20 });
 
 	CHECK(at(ui, 15, 15) == &child);
@@ -155,7 +176,8 @@ static void test_clipping()
 	std::cout << "[5] hit test: hijos que se salen\n";
 	Ui ui;
 	ui.update(800, 600);
-	auto& list = ui.root().add<Box>(Rect{ 0, 0, 100, 100 });
+	auto& area = free_area(ui);
+	auto& list = area.add<Box>(Rect{ 0, 0, 100, 100 });
 	auto& row  = list.add<Box>(Rect{ 0, 80, 100, 40 });   // asoma 20 px por debajo
 
 	CHECK(at(ui, 50, 90) == &row);
@@ -172,7 +194,8 @@ static void test_enter_leave()
 	std::cout << "[6] entrar y salir\n";
 	Ui ui;
 	ui.update(800, 600);
-	auto& panel  = ui.root().add<Box>(Rect{ 0, 0, 200, 200 });
+	auto& area = free_area(ui);
+	auto& panel  = area.add<Box>(Rect{ 0, 0, 200, 200 });
 	auto& button = panel.add<Box>(Rect{ 50, 50, 50, 50 });
 
 	CHECK(ui.on_event({ .type = EventType::MouseMove, .position = { 10, 10 } }));   // sobre la UI
@@ -196,7 +219,8 @@ static void test_widget_moves()
 	std::cout << "[7] el widget se mueve bajo el raton\n";
 	Ui ui;
 	ui.update(800, 600);
-	auto& box = ui.root().add<Box>(Rect{ 0, 0, 100, 100 });
+	auto& area = free_area(ui);
+	auto& box = area.add<Box>(Rect{ 0, 0, 100, 100 });
 	CHECK(at(ui, 50, 50) == &box);
 
 	box.set_rect({ 300, 300, 100, 100 });
@@ -215,7 +239,8 @@ static void test_bubbling()
 	std::string log;
 	Ui ui;
 	ui.update(800, 600);
-	auto& a = ui.root().add<Recorder>(Rect{ 0, 0, 300, 300 }, 'a', true, log);
+	auto& area = free_area(ui);
+	auto& a = area.add<Recorder>(Rect{ 0, 0, 300, 300 }, 'a', true, log);
 	auto& b = a.add<Recorder>(Rect{ 0, 0, 200, 200 }, 'b', true, log);
 	auto& c = b.add<Recorder>(Rect{ 0, 0, 100, 100 }, 'c', false, log);
 
@@ -245,7 +270,8 @@ static void test_capture_rules()
 	std::string log;
 	Ui ui;
 	ui.update(800, 600);
-	ui.root().add<Recorder>(Rect{ 0, 0, 100, 100 }, 'a', true, log);
+	auto& area = free_area(ui);
+	area.add<Recorder>(Rect{ 0, 0, 100, 100 }, 'a', true, log);
 
 	// Con el izquierdo apretado, el derecho se ignora.
 	down(ui, 50, 50);
@@ -278,7 +304,8 @@ static void test_button()
 	std::cout << "[10] boton: estados y clics\n";
 	Ui ui;
 	ui.update(800, 600);
-	auto& button = ui.root().add<Button>(u8"Salir");
+	auto& area = free_area(ui);
+	auto& button = area.add<Button>(u8"Salir");
 	button.set_rect({ 0, 0, 100, 40 });
 	int clicks = 0;
 	ButtonState during = ButtonState::Pressed;
@@ -320,7 +347,8 @@ static void test_button_edges()
 	std::string log;
 	Ui ui;
 	ui.update(800, 600);
-	auto& panel  = ui.root().add<Recorder>(Rect{ 0, 0, 200, 200 }, 'p', true, log);
+	auto& area = free_area(ui);
+	auto& panel  = area.add<Recorder>(Rect{ 0, 0, 200, 200 }, 'p', true, log);
 	auto& button = panel.add<Button>(u8"X");
 	auto& other  = panel.add<Button>(u8"Y");
 	button.set_rect({ 0, 0, 100, 40 });
@@ -387,9 +415,10 @@ static void test_remove()
 	int alive = 0;
 	Ui ui;
 	ui.update(800, 600);
-	auto& keep   = ui.root().add<Box>(Rect{ 0, 0, 400, 400 });
-	auto& dialog = ui.root().add<Box>(Rect{ 0, 0, 200, 200 });
-	auto& last   = ui.root().add<Box>(Rect{ 500, 0, 10, 10 });
+	auto& area = free_area(ui);
+	auto& keep   = area.add<Box>(Rect{ 0, 0, 400, 400 });
+	auto& dialog = area.add<Box>(Rect{ 0, 0, 200, 200 });
+	auto& last   = area.add<Box>(Rect{ 500, 0, 10, 10 });
 	dialog.add<Closer>(dialog, alive).set_rect({ 0, 0, 50, 50 });
 	CHECK(alive == 1);
 
@@ -398,9 +427,9 @@ static void test_remove()
 	CHECK(seen == 1);   // durante su función, vivo
 	CHECK(alive == 0);            // al acabar el evento, no
 	CHECK(ui.captured() == nullptr);
-	CHECK(ui.root().children().size() == 2);          // los demás siguen, y en orden
-	CHECK(ui.root().children()[0].get() == &keep);
-	CHECK(ui.root().children()[1].get() == &last);
+	CHECK(area.children().size() == 2);          // los demás siguen, y en orden
+	CHECK(area.children()[0].get() == &keep);
+	CHECK(area.children()[1].get() == &last);
 	CHECK(at(ui, 20, 20) == &keep);
 
 	// Desde fuera, con el ratón encima y APRETADO: se oculta ya, se destruye en update.
@@ -439,12 +468,166 @@ static void test_reentrancy()
 
 	Ui ui;
 	ui.update(800, 600);
-	ui.root().add<Nested>(ui).set_rect({ 0, 0, 50, 50 });
+	auto& area = free_area(ui);
+	area.add<Nested>(ui).set_rect({ 0, 0, 50, 50 });
 	down(ui, 20, 20);
 	up(ui, 20, 20);
 	CHECK(alive_inside == 1);
 	CHECK(alive == 0);
-	CHECK(ui.root().children().empty());
+	CHECK(area.children().empty());
+}
+
+// 14. El reparto de lo que sobra, a solas.
+static void test_distribute()
+{
+	std::cout << "[14] distribute\n";
+	using V = std::vector<float>;
+	const auto run = [](std::vector<FlexItem> items, float available) { return distribute(items, available); };
+	const auto sum = [](const V& sizes) { float total = 0.0f; for (float s : sizes) { total += s; } return total; };
+
+	CHECK((run({ { 30, 0 }, { 0, 1 }, { 40, 0 } }, 264) == V{ 30, 194, 40 }));   // el de los docs
+	CHECK((run({ { 0, 1 }, { 0, 3 } }, 200) == V{ 50, 150 }));
+	CHECK((run({ { 50, 1 }, { 10, 1 } }, 100) == V{ 70, 30 }));      // se SUMA a lo que pedían
+	CHECK((run({ { 0, 2 }, { 0, 6 } }, 200) == V{ 50, 150 }));       // solo importa la proporción
+
+	// Nadie crece, o no sobra nada.
+	CHECK((run({ { 30, 0 }, { 40, 0 } }, 100) == V{ 30, 40 }));
+	CHECK((run({ { 30, 1 }, { 40, 1 } }, 70) == V{ 30, 40 }));
+	CHECK((run({ { 30, 1 }, { 40, 0 } }, 50) == V{ 30, 40 }));
+	CHECK((run({ { 30, 1 } }, -20) == V{ 30 }));                     // ventana diminuta
+	CHECK(run({}, 100).empty());
+
+	// Redondeo: enteros, y que sumen justo lo que hay.
+	for (const float available : { 100.0f, 101.0f, 1000.0f, 7.0f, 1.0f })
+	{
+		for (const int count : { 2, 3, 6, 7, 13 })
+		{
+			const V sizes = run(std::vector<FlexItem>(static_cast<size_t>(count), FlexItem{ 0.0f, 0.1f }), available);
+			bool whole = sizes.size() == static_cast<size_t>(count);
+			for (const float size : sizes) {
+				// Iguales salvo un píxel, y enteros.
+				whole = whole && size == std::floor(size) && std::abs(size - available / static_cast<float>(count)) <= 1.0f;
+			}
+			CHECK(whole);
+			CHECK(sum(sizes) == available);
+		}
+	}
+
+	// El píxel suelto del redondeo no le cae a quien no crece.
+	const V mixed = run({ { 10, 0 }, { 0, 1 }, { 10, 0 }, { 0, 1 }, { 10, 0 }, { 0, 1 }, { 10, 0 } }, 140);
+	CHECK(mixed.size() == 7 && mixed[0] == 10 && mixed[2] == 10 && mixed[4] == 10 && mixed[6] == 10);
+	CHECK(sum(mixed) == 140);
+}
+
+// 15. Column y Row: el ejemplo de docs/ui-design.md, completo.
+static void test_linear()
+{
+	std::cout << "[15] Row y Column\n";
+	Ui ui;
+	auto& column = ui.root().add<Column>();
+	column.set_padding(Insets::all(10));
+	column.set_gap(8);
+	auto& title  = column.add<Fixed>(50.0f, 30.0f);
+	auto& list   = column.add<Fixed>(80.0f, 0.0f, 1.0f);
+	auto& button = column.add<Fixed>(60.0f, 40.0f);
+
+	ui.update(200, 300);
+	CHECK(column.desired_size().x == 100 && column.desired_size().y == 106);   // 80 + márgenes; 30 + 0 + 40 + 16 + 20
+	CHECK((column.rect() == Rect{ 0, 0, 200, 300 }));
+	CHECK((title.rect()  == Rect{ 10, 10, 180, 30 }));      // Fill: todo el ancho
+	CHECK((list.rect()   == Rect{ 10, 48, 180, 194 }));
+	CHECK((button.rect() == Rect{ 10, 250, 180, 40 }));
+
+	// Al agrandar la ventana, el único que crece es la lista.
+	ui.update(200, 400);
+	CHECK((list.rect()   == Rect{ 10, 48, 180, 294 }));
+	CHECK((button.rect() == Rect{ 10, 350, 180, 40 }));
+
+	// Uno escondido no ocupa, ni deja su separación.
+	title.set_visible(false);
+	ui.update(200, 300);
+	CHECK((list.rect()   == Rect{ 10, 10, 180, 232 }));
+	CHECK((button.rect() == Rect{ 10, 250, 180, 40 }));
+
+	// Colocación a lo ancho.
+	button.set_align(Placement::End, Placement::Fill);
+	ui.update(200, 300);
+	CHECK((button.rect() == Rect{ 130, 250, 60, 40 }));
+	button.set_align(Placement::Center, Placement::Fill);
+	ui.update(200, 300);
+	CHECK((button.rect() == Rect{ 70, 250, 60, 40 }));
+
+	// Row, con un Spacer que empuja al último contra el borde.
+	Ui other;
+	auto& row = other.root().add<Row>();
+	row.set_gap(5);
+	row.set_align(Placement::Fill, Placement::Start);
+	auto& first = row.add<Fixed>(40.0f, 20.0f);
+	row.add<Spacer>();
+	auto& last = row.add<Fixed>(60.0f, 30.0f);
+	other.update(300, 100);
+	CHECK((first.rect() == Rect{ 0, 0, 40, 30 }));          // tan alta como la mayor
+	CHECK((last.rect()  == Rect{ 240, 0, 60, 30 }));
+	CHECK(at(other, 150, 10) == nullptr);                   // el Spacer no coge el ratón
+	CHECK(at(other, 10, 10) == &first);
+}
+
+// 16. Stack y Panel: esquinas, centro y márgenes.
+static void test_stack()
+{
+	std::cout << "[16] Stack y Panel\n";
+	Ui ui;
+	auto& screen = ui.root().add<Stack>();
+	screen.set_padding({ 20, 90, 20, 20 });
+	auto& full   = screen.add<Fixed>(10.0f, 10.0f);
+	auto& corner = screen.add<Fixed>(100.0f, 50.0f);
+	auto& middle = screen.add<Panel>(BoxStyle{});
+	corner.set_align(Placement::End, Placement::End);
+	middle.set_align(Placement::Center, Placement::Center);
+	middle.set_padding(Insets::all(15));
+	auto& content = middle.add<Fixed>(101.0f, 40.0f);
+
+	ui.update(800, 600);
+	CHECK((full.rect()    == Rect{ 20, 90, 760, 490 }));
+	CHECK((corner.rect()  == Rect{ 680, 530, 100, 50 }));
+	CHECK((middle.rect()  == Rect{ 334, 300, 131, 70 }));   // 131 x 70; a píxel entero (334,5 -> 334)
+	CHECK((content.rect() == Rect{ 349, 315, 101, 40 }));
+	CHECK(at(ui, 340, 305) == &middle);                     // un Panel sí coge el ratón
+
+	// Ventana más pequeña que lo que se pide: nada negativo.
+	ui.update(30, 50);
+	CHECK(full.rect().width == 0 && full.rect().height == 0);
+	CHECK(corner.rect().width == 0 && content.rect().width == 0);
+}
+
+// 17. Lo que se añade o se quita recoloca a los demás.
+static void test_relayout()
+{
+	std::cout << "[17] anadir y quitar recoloca\n";
+	Ui ui;
+	auto& panel = ui.root().add<Panel>(BoxStyle{});
+	panel.set_align(Placement::Center, Placement::Center);
+	auto& column = panel.add<Column>();
+	column.set_gap(10);
+	auto& a = column.add<Fixed>(100.0f, 40.0f);
+	auto& b = column.add<Fixed>(100.0f, 40.0f);
+	ui.update(300, 300);
+	CHECK((panel.rect() == Rect{ 100, 105, 100, 90 }));
+
+	column.add<Fixed>(100.0f, 40.0f);
+	ui.update(300, 300);
+	CHECK((panel.rect() == Rect{ 100, 80, 100, 140 }));
+
+	a.remove();
+	ui.update(300, 300);
+	CHECK((panel.rect() == Rect{ 100, 105, 100, 90 }));
+	CHECK(b.rect().y == 105);
+	CHECK(column.children().size() == 2);
+
+	// Botón sin fuente: el alto del texto más su margen.
+	auto& button = column.add<Button>(u8"X");
+	ui.update(300, 300);
+	CHECK(button.rect().height == ui.theme().text_size + 2 * ui.theme().button_padding.y);
 }
 
 int main()
@@ -462,6 +645,10 @@ int main()
 	test_button_edges();
 	test_remove();
 	test_reentrancy();
+	test_distribute();
+	test_linear();
+	test_stack();
+	test_relayout();
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;

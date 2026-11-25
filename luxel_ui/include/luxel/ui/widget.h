@@ -10,6 +10,10 @@
 namespace luxel::ui
 {
 	class Painter;
+	struct Theme;
+
+	// Dónde se pone un widget en el hueco que le da su contenedor, en una dirección.
+	enum class Placement { Fill, Start, Center, End };   // Fill = lo ocupa entero
 
 	// Un nodo del árbol de la UI (D2 de docs/ui-design.md).
 	//
@@ -54,12 +58,40 @@ namespace luxel::ui
 		Widget* parent() const { return m_parent; }
 		const std::vector<std::unique_ptr<Widget>>& children() const { return m_children; }
 
-		// Dónde está, en píxeles de la ventana (no relativo al padre). De momento
-		// lo pone la aplicación; en U3 lo hará el layout.
+		// Dónde está, en píxeles de la ventana (no relativo al padre).
+		//
+		// Quién lo pone depende del PADRE. Si es un contenedor (Row, Column, Stack,
+		// Panel o la raíz), lo pone él en cada Ui::update() y set_rect no sirve de nada.
+		// Si es un Widget normal, deja a sus hijos donde estén: lo pone la aplicación
+		// con set_rect. (Es la diferencia entre Control y Container en Godot.)
 		const Rect& rect() const { return m_rect; }
 		void set_rect(const Rect& rect) { m_rect = rect; }
 
-		// Un widget invisible no se pinta ni recibe el ratón, y sus hijos tampoco.
+		// --- Layout: lo que el widget le pide a su contenedor ---
+
+		// Como poco, este tamaño (el contenido puede pedir más).
+		void set_min_size(math::Vector2f size) { m_min_size = size; }
+
+		// Peso para repartirse lo que sobre a lo largo de un Row o un Column.
+		// 0 = no crece. Con 1 y 3, al segundo le toca el triple que al primero.
+		float grow() const { return m_grow; }
+		void set_grow(float grow) { m_grow = grow; }
+
+		// Dónde ponerse en su hueco. Un Stack mira los dos; un Column, solo x; un Row,
+		// solo y (en la otra dirección manda el orden de los hijos).
+		Placement align_x() const { return m_align_x; }
+		Placement align_y() const { return m_align_y; }
+		void set_align(Placement x, Placement y) { m_align_x = x; m_align_y = y; }
+
+		// Primera pasada, de abajo arriba: calcula desired_size(), lo que quiere medir.
+		void measure(const Theme& theme);
+		math::Vector2f desired_size() const { return m_desired; }
+
+		// Segunda pasada, de arriba abajo: este es tu sitio; coloca a tus hijos en él.
+		void arrange(const Rect& rect);
+
+		// Un widget invisible no se pinta ni recibe el ratón, y sus hijos tampoco. En un
+		// contenedor tampoco ocupa sitio: los demás se corren.
 		bool visible() const { return m_visible; }
 		void set_visible(bool visible) { m_visible = visible; }
 
@@ -85,6 +117,14 @@ namespace luxel::ui
 		void draw_tree(Painter& painter) const;
 
 	protected:
+		// Lo que pide el contenido (texto, hijos...), sin contar min_size. Un contenedor
+		// tiene que llamar a measure() de sus hijos visibles.
+		virtual math::Vector2f measure_content(const Theme& theme);
+
+		// Coloca a los hijos dentro de rect(), llamando a su arrange(). Por defecto los
+		// deja donde están.
+		virtual void arrange_children();
+
 		// Avisos para que cada tipo de widget reaccione, si quiere.
 		virtual void on_mouse_enter() {}
 		virtual void on_mouse_leave() {}
@@ -106,6 +146,11 @@ namespace luxel::ui
 		std::vector<std::unique_ptr<Widget>> m_children;
 		Widget* m_parent{ nullptr };
 		Rect m_rect{};
+		math::Vector2f m_min_size{ 0.0f, 0.0f };
+		math::Vector2f m_desired{ 0.0f, 0.0f };
+		float m_grow{ 0.0f };
+		Placement m_align_x{ Placement::Fill };
+		Placement m_align_y{ Placement::Fill };
 		bool m_visible{ true };
 		bool m_ignores_mouse{ false };
 		bool m_clips_children{ false };

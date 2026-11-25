@@ -1,6 +1,7 @@
 #pragma once
 
 #include <luxel/ui/event.h>
+#include <luxel/ui/layout.h>
 #include <luxel/ui/theme.h>
 #include <luxel/ui/widget.h>
 #include <luxel/renderer2d.h>
@@ -12,21 +13,21 @@ namespace luxel::ui
 	// una por ventana.
 	//
 	//     ui.on_event(to_ui(event));         // por cada evento de la ventana
-	//     ...colocar los widgets (en U3, ui.layout)...
 	//     ui.update(width, height);          // una vez por frame
 	//     ui.draw(renderer, frame);          // dentro de begin_rendering/end_rendering
 	class Ui
 	{
 	public:
-		explicit Ui(const Theme& theme = {}) : m_theme(theme) { m_root.set_ignores_mouse(true); }
+		explicit Ui(const Theme& theme = {}) : m_theme(theme) {}
 
 		// No copiable ni movible: guarda punteros a sus propios widgets.
 		Ui(const Ui&) = delete;
 		Ui& operator=(const Ui&) = delete;
 
-		// La raíz ocupa toda la ventana y es invisible para el ratón: donde no
-		// hay ningún widget, el ratón es del juego.
-		Widget& root() { return m_root; }
+		// La raíz ocupa toda la ventana y es un Stack: sus hijos se pisan, y cada uno
+		// se coloca según su set_align(). Como todo Stack, es invisible para el ratón:
+		// donde no hay ningún widget, el ratón es del juego.
+		Stack& root() { return m_root; }
 
 		Theme& theme() { return m_theme; }
 
@@ -36,8 +37,8 @@ namespace luxel::ui
 		// encima de un widget (si no, el juego creería que sigue apretado).
 		bool on_event(const Event& event);
 
-		// Una vez por frame, tras colocar los widgets: ajusta la raíz al tamaño de
-		// la ventana y vuelve a mirar qué hay bajo el ratón. Aunque el ratón no se
+		// Una vez por frame: mide y coloca todo el árbol para este tamaño de ventana y
+		// vuelve a mirar qué hay bajo el ratón. Aunque el ratón no se
 		// mueva, los widgets pueden moverse debajo de él. También destruye los
 		// quitados con Widget::remove() desde fuera de un evento.
 		void update(float width, float height);
@@ -62,7 +63,7 @@ namespace luxel::ui
 		void collect_removed(Widget& widget, std::vector<std::unique_ptr<Widget>>& dead);
 
 		Theme m_theme;
-		Widget m_root;
+		Stack m_root;
 		std::optional<math::Vector2f> m_mouse;   // vacío = el ratón está fuera de la ventana
 		Widget* m_hovered{ nullptr };
 		Widget* m_captured{ nullptr };

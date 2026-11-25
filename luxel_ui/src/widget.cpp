@@ -1,9 +1,42 @@
 #include <luxel/ui/widget.h>
 #include <luxel/ui/painter.h>
+#include <algorithm>
 #include <cassert>
+#include <cmath>
 
 namespace luxel::ui
 {
+	void Widget::measure(const Theme& theme)
+	{
+		// Se redondea hacia arriba: un texto de 81,3 px necesita 82. Así todo el layout
+		// trabaja con píxeles enteros.
+		const math::Vector2f content = measure_content(theme);
+		m_desired = { std::ceil(std::max(content.x, m_min_size.x)), std::ceil(std::max(content.y, m_min_size.y)) };
+	}
+
+	void Widget::arrange(const Rect& rect)
+	{
+		m_rect = rect;
+		arrange_children();
+	}
+
+	math::Vector2f Widget::measure_content(const Theme& theme)
+	{
+		// No depende de sus hijos, pero ellos sí necesitan medirse: puede haber un
+		// contenedor más abajo.
+		for (const auto& child : m_children) {
+			child->measure(theme);
+		}
+		return { 0.0f, 0.0f };
+	}
+
+	void Widget::arrange_children()
+	{
+		for (const auto& child : m_children) {
+			child->arrange(child->rect());
+		}
+	}
+
 	void Widget::draw_tree(Painter& painter) const
 	{
 		if (!m_visible) {

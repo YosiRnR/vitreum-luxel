@@ -37,6 +37,17 @@ namespace luxel::ui
 		draw_line(painter, rect(), m_text, m_align);
 	}
 
+	math::Vector2f Label::measure_content(const Theme& theme)
+	{
+		return measure_text(theme, m_text, theme.text_size);
+	}
+
+	math::Vector2f Button::measure_content(const Theme& theme)
+	{
+		const math::Vector2f text = measure_text(theme, m_text, theme.text_size);
+		return { text.x + 2.0f * theme.button_padding.x, text.y + 2.0f * theme.button_padding.y };
+	}
+
 	void Button::draw(Painter& painter) const
 	{
 		const ButtonStyle& style = m_style ? *m_style : painter.theme().button;

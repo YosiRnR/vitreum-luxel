@@ -3,16 +3,17 @@
 #include <luxel/ui/ui.h>
 #include <luxel/ui/widgets.h>
 #include <array>
-#include <cmath>
 #include <functional>
 
-// El menú de la ventana de Iria, hecho con widgets de luxel_ui: un panel con tres
-// botones. "Jugar" lo esconde (Escape lo devuelve), "Opciones" abre un diálogo que
-// se quita a sí mismo y "Salir" llama a on_quit.
+// La UI de la ventana de Iria, hecha con widgets de luxel_ui. A la derecha, una
+// columna con la lista de objetos (que se estira con la ventana) y el menú; "Jugar"
+// esconde el menú (Escape lo devuelve), "Opciones" abre un diálogo que se quita a sí
+// mismo y "Salir" llama a on_quit.
 //
-// Los widgets se crean UNA vez, en el constructor, y persisten (modo retained).
-// En cada frame solo se colocan (layout) y se pintan. El diálogo es la excepción:
-// nace y muere mientras la aplicación funciona.
+// Los widgets se crean UNA vez, en el constructor, y persisten (modo retained). En
+// cada frame se colocan (update) y se pintan. El diálogo es la excepción: nace y
+// muere mientras la aplicación funciona. Aquí no hay ni una cuenta de posiciones:
+// solo se dice cómo se reparte el espacio.
 class IriaMenu
 {
 public:
@@ -23,10 +24,29 @@ public:
 	{
 		using namespace luxel::ui;
 
-		// El panel de fondo: se aclara el borde si el ratón está en él (y no en un botón).
+		// El margen de toda la ventana (arriba, más: ahí está el estado de Iria).
+		m_screen = &m_ui.root().add<Stack>();
+		m_screen->set_padding({ 20.0f, 90.0f, 20.0f, 20.0f });
+
+		// Columna pegada a la derecha y tan alta como la ventana.
+		auto& side = m_screen->add<Column>();
+		side.set_align(Placement::End, Placement::Fill);
+		side.set_gap(20.0f);
+
+		// El sitio de la lista, que todavía la pinta el HUD a mano (será un ScrollView
+		// en U4). Se queda con todo el alto que sobre.
+		m_list_area = &side.add<Widget>();
+		m_list_area->set_ignores_mouse(true);
+		m_list_area->set_min_size({ 260.0f, 110.0f });
+		m_list_area->set_grow(1.0f);
+
+		// El menú: se aclara el borde si el ratón está en él (y no en un botón).
 		BoxStyle back_hover = k_back;
 		back_hover.border_color = { 1.0f, 1.0f, 1.0f, 1.0f };
-		m_panel = &m_ui.root().add<Panel>(k_back, back_hover);
+		m_panel = &side.add<Panel>(k_back, back_hover);
+		m_panel->set_padding(Insets::all(20.0f));
+		auto& buttons = m_panel->add<Column>();
+		buttons.set_gap(17.0f);
 
 		const BoxStyle normal[3] = {
 			{ .color = { 0.05f, 0.35f, 0.80f, 1.0f }, .corner_radius = 4.0f },
@@ -43,20 +63,21 @@ public:
 		};
 		const std::u8string labels[3] = { u8"Jugar", u8"Opciones", u8"Salir" };
 
-		for (size_t i = 0; i < 3; ++i)
+		std::array<Button*, 3> items{};
+		for (size_t i = 0; i < items.size(); ++i)
 		{
 			ButtonStyle style{ .normal = normal[i], .hover = normal[i], .pressed = normal[i] };
 			style.hover.color   = hover_color[i];
 			style.pressed.color = pressed_color[i];
-			m_buttons[i] = &m_panel->add<Button>(labels[i]);
-			m_buttons[i]->set_style(style);
+			items[i] = &buttons.add<Button>(labels[i]);
+			items[i]->set_style(style);
 		}
 
 		// Las lambdas capturan this: vale porque los botones mueren con m_ui, que es
 		// parte de este objeto (y por eso IriaMenu no se puede copiar ni mover).
-		m_buttons[0]->on_click = [this] { m_panel->set_visible(false); };
-		m_buttons[1]->on_click = [this] { open_options(); };
-		m_buttons[2]->on_click = [this] { if (on_quit) { on_quit(); } };
+		items[0]->on_click = [this] { m_panel->set_visible(false); };
+		items[1]->on_click = [this] { open_options(); };
+		items[2]->on_click = [this] { if (on_quit) { on_quit(); } };
 	}
 
 	IriaMenu(const IriaMenu&) = delete;
@@ -66,31 +87,13 @@ public:
 
 	void show() { m_panel->set_visible(true); }
 
-	// Coloca los widgets. Las cuentas son a mano hasta U3.
-	void layout(float width, float height)
-	{
-		// El menú, abajo a la derecha.
-		const float margin = 20.0f, panel_w = 260.0f, panel_h = 218.0f;
-		const luxel::ui::Rect panel{ width - margin - panel_w, height - margin - panel_h, panel_w, panel_h };
-		m_panel->set_rect(panel);
-		for (size_t i = 0; i < m_buttons.size(); ++i) {
-			m_buttons[i]->set_rect({ panel.x + 20.0f, panel.y + 20.0f + static_cast<float>(i) * 65.0f, 220.0f, 48.0f });
-		}
-
-		// El diálogo, si está abierto, en el centro.
-		if (m_dialog != nullptr)
-		{
-			const luxel::ui::Rect dialog{ std::round((width - 420.0f) * 0.5f), std::round((height - 190.0f) * 0.5f), 420.0f, 190.0f };
-			m_dialog->set_rect(dialog);
-			m_dialog_text->set_rect({ dialog.x + 20.0f, dialog.y + 20.0f, 380.0f, 60.0f });
-			m_dialog_close->set_rect({ dialog.x + 120.0f, dialog.y + 115.0f, 180.0f, 48.0f });
-		}
-		m_ui.update(width, height);
-	}
+	// Una vez por frame: coloca todo para este tamaño de ventana.
+	void update(float width, float height) { m_ui.update(width, height); }
 
 	void draw(luxel::Renderer2D& r2d, luxel::Frame& frame) const { m_ui.draw(r2d, frame); }
 
-	luxel::ui::Rect panel_rect() const { return m_panel->rect(); }
+	// Dónde tiene que pintar el HUD la lista de objetos.
+	luxel::ui::Rect list_rect() const { return m_list_area->rect(); }
 
 private:
 	void open_options()
@@ -99,19 +102,36 @@ private:
 		if (m_dialog != nullptr) {
 			return;   // ya está abierto
 		}
-		// Se añade el último a la raíz: se pinta encima de todo.
-		m_dialog       = &m_ui.root().add<Panel>(k_dialog);
-		m_dialog_text  = &m_dialog->add<Label>(u8"Aún no hay opciones", Align::Center);
-		m_dialog_close = &m_dialog->add<Button>(u8"Cerrar");   // con el aspecto del tema
+		// Centrado y tan grande como pida su contenido. Va el último en la pantalla, así
+		// que se pinta encima de todo.
+		m_dialog = &m_screen->add<Panel>(k_dialog);
+		m_dialog->set_align(Placement::Center, Placement::Center);
+		m_dialog->set_padding(Insets::all(24.0f));
+
+		auto& column = m_dialog->add<Column>();
+		column.set_gap(24.0f);
+		m_dialog_lines = &column.add<Column>();   // aquí se van añadiendo las líneas
+		m_dialog_lines->set_gap(4.0f);
+		m_dialog_lines->add<Label>(u8"Aún no hay opciones", Align::Center);
+
+		// Los dos botones se reparten el ancho que sobre: 1 parte y 2 partes.
+		auto& row = column.add<Row>();
+		row.set_gap(16.0f);
+		row.set_min_size({ 480.0f, 0.0f });
+		auto& close = row.add<Button>(u8"Cerrar");
+		auto& more  = row.add<Button>(u8"Otra línea");
+		close.set_grow(1.0f);
+		more.set_grow(2.0f);
+
+		more.on_click = [this] { m_dialog_lines->add<Label>(u8"...pero el diálogo crece solo", Align::Center); };
 
 		// El escenario de Widget::remove(): este botón está DENTRO del diálogo que quita.
 		// No pasa nada: se destruyen cuando Ui termina de repartir el clic. Pero nuestros
 		// punteros hay que vaciarlos a mano: Ui no sabe que los tenemos.
-		m_dialog_close->on_click = [this] {
+		close.on_click = [this] {
 			m_dialog->remove();
 			m_dialog       = nullptr;
-			m_dialog_text  = nullptr;
-			m_dialog_close = nullptr;
+			m_dialog_lines = nullptr;
 		};
 	}
 
@@ -127,9 +147,9 @@ private:
 	luxel::ui::Ui m_ui;
 
 	// Punteros a widgets del árbol: no son dueños (lo es m_ui).
-	luxel::ui::Panel* m_panel{ nullptr };
-	std::array<luxel::ui::Button*, 3> m_buttons{};
+	luxel::ui::Stack*  m_screen{ nullptr };
+	luxel::ui::Widget* m_list_area{ nullptr };
+	luxel::ui::Panel*  m_panel{ nullptr };
 	luxel::ui::Panel*  m_dialog{ nullptr };         // nullptr = cerrado
-	luxel::ui::Label*  m_dialog_text{ nullptr };
-	luxel::ui::Button* m_dialog_close{ nullptr };
+	luxel::ui::Column* m_dialog_lines{ nullptr };
 };

@@ -28,6 +28,7 @@ namespace luxel::ui
 		const BitmapFont* font{ nullptr };   // no es suya: debe vivir más que la Ui. nullptr = no se pinta texto
 		float text_size{ 30.0f };            // alto de línea, en píxeles
 		Color text_color{ 1.0f, 1.0f, 1.0f, 1.0f };
+		math::Vector2f button_padding{ 24.0f, 9.0f };   // del texto al canto del botón: a los lados y arriba/abajo
 		ButtonStyle button{};                // el de los botones que no traen uno propio
 	};
 

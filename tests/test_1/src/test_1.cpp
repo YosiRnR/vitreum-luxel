@@ -514,7 +514,7 @@ static void draw_scroll_list(luxel::Renderer2D& r2d, const luxel::BitmapFont& fo
 	const luxel::math::Vector2f view_size{ size.x - 2 * inset, size.y - 2 * inset };
 
 	// Sube y baja: 0 arriba del todo, 1 abajo del todo.
-	const float hidden = std::size(names) * row_height - view_size.y;   // lo que no cabe
+	const float hidden = std::max(0.0f, std::size(names) * row_height - view_size.y);   // lo que no cabe (si cabe todo, quieta)
 	const float scroll = (0.5f - 0.5f * std::cos(time * 0.6f)) * hidden;
 
 	r2d.push_clip_rect(view, view_size);
@@ -541,7 +541,7 @@ static void draw_scroll_list(luxel::Renderer2D& r2d, const luxel::BitmapFont& fo
 // Diferencia con tenerlo en el mundo (como en R3a): al agrandar la ventana, el
 // bosque crece con ella, pero las letras siguen midiendo los mismos píxeles.
 static void draw_iria_hud(luxel::Renderer2D& r2d, const Scene& scene, const IriaController& iria, float width, float height,
-                          const luxel::ui::Rect& menu, float time)
+                          const luxel::ui::Rect& list, float time)
 {
 	if (!scene.font) {
 		return;
@@ -579,8 +579,8 @@ static void draw_iria_hud(luxel::Renderer2D& r2d, const Scene& scene, const Iria
 	r2d.draw_quad({ .position = center, .size = { portrait, portrait }, .rotation = 0.15f,
 	                .texture = scene.iria_sheet.get(), .uv_min = uv_min, .uv_max = uv_max, .layer = 1 });
 
-	// --- Lista con recorte (R4d), encima del menú (que ahora son widgets: IriaMenu) ---
-	draw_scroll_list(r2d, font, { menu.x, menu.y - 20.0f - 220.0f }, { menu.width, 220.0f }, time);
+	// --- Lista con recorte (R4d), en el sitio que le ha dado el layout de IriaMenu ---
+	draw_scroll_list(r2d, font, list.top_left(), list.size(), time);
 }
 
 // Promedia el tiempo de CPU del lote y lo pone en el título cada medio segundo.
@@ -646,8 +646,8 @@ static void render_window_frame(luxel::Device& device, luxel::Renderer2D& r2d, R
 		const float width  = static_cast<float>(extent.width);
 		const float height = static_cast<float>(extent.height);
 		r2d.begin_ui(*frame, width, height);
-		render_window.menu->layout(width, height);
-		draw_iria_hud(r2d, scene, iria, width, height, render_window.menu->panel_rect(), time);
+		render_window.menu->update(width, height);
+		draw_iria_hud(r2d, scene, iria, width, height, render_window.menu->list_rect(), time);
 		r2d.end();
 		quad_count += r2d.last_batch_quad_count();
 		draw_count += r2d.last_batch_draw_count();
