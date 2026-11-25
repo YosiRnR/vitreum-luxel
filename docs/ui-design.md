@@ -1,6 +1,6 @@
 # Diseño de la librería de UI (`luxel_ui`)
 
-> **Estado: U1 y U2 hechos; siguiente, U3.** Las decisiones están numeradas
+> **Estado: U1, U2 y U3 hechos; siguiente, U4.** Las decisiones están numeradas
 > (D1-D9) para poder hablar de ellas una a una.
 
 Widgets (botones, listas, cajas de texto, paneles) por encima del `Renderer2D`,
@@ -168,7 +168,7 @@ Cada uno acaba en algo visible. Entre paréntesis, la parte más formativa.
 - **U2. Botón. (Hecho.)** Captura, clic, subida de eventos y borrado aplazado. Demo: los
   botones de Iria funcionan; "Salir" cierra la ventana. (El estado del botón:
   normal, encima, pulsado, pulsado pero con el ratón fuera.)
-- **U3. Layout.** `Row`, `Column`, `Stack`, márgenes, separación y `grow`. Demo: el
+- **U3. Layout. (Hecho.)** `Row`, `Column`, `Stack`, márgenes, separación y `grow`. Demo: el
   panel se adapta al tamaño de la ventana. (Repartir el espacio que sobra.)
 - **U4. Scroll.** `ScrollView` sobre el recorte de R4d, rueda y barra que se
   arrastra. Demo: la lista de objetos, ahora con la rueda. (Pasar de píxeles de

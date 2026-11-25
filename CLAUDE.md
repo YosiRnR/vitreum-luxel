@@ -484,7 +484,7 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   `draw()` con su propio lote `begin_ui`). `src/hit_test.cpp` (la función la
   escribió el usuario): hijos del último al primero, aunque el punto esté fuera
   del padre si este no recorta. El hover se recalcula también en `update()` (el
-  ratón quieto y el widget que se mueve). Hay que hacer el layout a mano hasta U3.
+  ratón quieto y el widget que se mueve).
   vitreum: evento `MouseLeave`
   (`TrackMouseEvent` cada vez que el ratón entra). `test_1`: `ui_events.h`
   (`to_ui`; `FocusLost` también apaga el hover) e `iria_menu.h` (el menú de Iria,
@@ -509,8 +509,24 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   diálogo que se quita a sí mismo, "Salir" cierra su ventana). `test_ui`: 13 casos.
   Pendiente: `Window::cancel_close(true)` pide el cierre (nombre engañoso; merece un
   `request_close()`).
-- Siguiente: U3 de `docs/ui-design.md` (layout: `Row`, `Column`, `Stack`, márgenes,
-  separación y `grow`). Aparcado para después: rasterizar TTF a mano y R5 (3D).
+- Hecho (U3, layout): dos pasadas en `Ui::update()`: `measure()` (de abajo arriba,
+  cuánto pide cada uno, con `ceil`: tamaños enteros) y `arrange()` (de arriba abajo,
+  dónde queda). `Widget`: `set_min_size`, `set_grow` (peso) y `set_align` (`Placement`
+  `Fill`/`Start`/`Center`/`End` por eje); se personaliza con `measure_content` y
+  `arrange_children`. Contenedores en `include/luxel/ui/layout.h`: `Insets`, `Stack`
+  (todos en el mismo hueco), `Linear` (`Row`/`Column`, con `gap` y `padding`) y
+  `Spacer`; todos ignoran el ratón. `Panel` es un `Stack` con fondo y la raíz de `Ui`
+  es un `Stack`; un `Widget` normal deja a sus hijos donde diga su `set_rect`. Los
+  invisibles no ocupan ni dejan separación; si no cabe, se sale por el final (no se
+  encoge a nadie). `src/distribute.cpp` (solo std, escrita por el usuario): reparte lo
+  que sobra según los pesos, arrastrando el error de redondeo al siguiente como
+  Bresenham, para que la suma sea exacta; exige `desired` y `available` enteros. Se
+  comprobó con 1,1 millones de repartos al azar. `Theme::button_padding` y
+  `measure_text` libre en `painter.h`. `test_1`: `IriaMenu` sin cuentas de posiciones
+  (la lista se estira con la ventana, el diálogo crece y se recentra); la lista la
+  sigue pintando el HUD en `list_rect()` hasta U4. `test_ui`: 17 casos.
+- Siguiente: U4 de `docs/ui-design.md` (`ScrollView`: rueda y barra que se arrastra).
+  Aparcado para después: rasterizar TTF a mano y R5 (3D).
 - Entorno de compilación (para el asistente): desde Git Bash, cargar
   `vcvars64.bat` de VS 2026 (`C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Auxiliary\Build`)
   y `cmake --build out/build/clangcl-debug`. No hay presets de build, solo de
