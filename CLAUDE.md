@@ -473,8 +473,24 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   quads, 2 draws). Tests: `test_renderer2d` 12 y 13, `test_deferred` 29 (1.000
   filas, se envían 8). Pendiente de R4: sombras, un radio por esquina y recorte
   redondeado; los cantos de un quad girado no se suavizan (se ven dientes).
-- Siguiente: U1 de `docs/ui-design.md` (árbol de widgets y ratón). Aparcado para
-  después: rasterizar TTF a mano y R5 (3D).
+- Hecho (U1, árbol de widgets y ratón): biblioteca `luxel_ui/` (namespace
+  `luxel::ui`; enlaza solo con `luxel_2d`, no conoce `vitreum`). Cabeceras en
+  `include/luxel/ui/`: `Rect` (`contains` semiabierto), `Event`
+  (`MouseMove`/`MouseLeave`), `Theme`, `Painter` (envuelve al `Renderer2D`),
+  `Widget` (dueño de sus hijos con `unique_ptr`, `add<T>()`, puntero crudo al
+  padre, `rect` en píxeles de ventana, `visible`, `ignores_mouse`,
+  `clips_children`), `Panel` (estilo opcional con el ratón encima), `Label`
+  (ignora el ratón) y `Ui` (`root()`, `on_event()` -> bool, `update(ancho, alto)`,
+  `draw()` con su propio lote `begin_ui`). `src/hit_test.cpp` (la función la
+  escribió el usuario): hijos del último al primero, aunque el punto esté fuera
+  del padre si este no recorta. El hover se recalcula también en `update()` (el
+  ratón quieto y el widget que se mueve). Hay que hacer el layout a mano hasta U3
+  y no se pueden borrar widgets hasta U2. vitreum: evento `MouseLeave`
+  (`TrackMouseEvent` cada vez que el ratón entra). `test_1`: `ui_events.h`
+  (`to_ui`; `FocusLost` también apaga el hover) e `iria_menu.h` (el menú de Iria,
+  tercer lote). `tests/test_ui` (caja blanca, sin GPU, 7 casos).
+- Siguiente: U2 de `docs/ui-design.md` (botón: captura, clic, subida de eventos y
+  borrado aplazado). Aparcado para después: rasterizar TTF a mano y R5 (3D).
 - Entorno de compilación (para el asistente): desde Git Bash, cargar
   `vcvars64.bat` de VS 2026 (`C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Auxiliary\Build`)
   y `cmake --build out/build/clangcl-debug`. No hay presets de build, solo de

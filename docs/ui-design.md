@@ -1,6 +1,6 @@
 # Diseño de la librería de UI (`luxel_ui`)
 
-> **Estado: acordado, sin código todavía.** Las decisiones están numeradas
+> **Estado: U1 hecho; siguiente, U2.** Las decisiones están numeradas
 > (D1-D9) para poder hablar de ellas una a una.
 
 Widgets (botones, listas, cajas de texto, paneles) por encima del `Renderer2D`,
@@ -162,7 +162,7 @@ falta una fuente, que necesita un `Device`). El dibujo se ve en `test_1`.
 
 Cada uno acaba en algo visible. Entre paréntesis, la parte más formativa.
 
-- **U1. Árbol y ratón.** `Widget`, `Ui`, eventos propios y `to_ui`, `Painter`,
+- **U1. Árbol y ratón. (Hecho.)** `Widget`, `Ui`, eventos propios y `to_ui`, `Painter`,
   `Panel` y `Label`. Demo: paneles anidados que se iluminan bajo el ratón.
   (*Hit test*: una función recursiva de unas 10 líneas.)
 - **U2. Botón.** Captura, clic, subida de eventos y borrado aplazado. Demo: los
