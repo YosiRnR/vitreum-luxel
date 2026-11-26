@@ -34,12 +34,19 @@ namespace luxel::ui
 
 	void Label::draw(Painter& painter) const
 	{
+		if (m_clip_text) {
+			painter.push_clip(rect());
+		}
 		draw_line(painter, rect(), m_text, m_align);
+		if (m_clip_text) {
+			painter.pop_clip();
+		}
 	}
 
 	math::Vector2f Label::measure_content(const Theme& theme)
 	{
-		return measure_text(theme, m_text, theme.text_size);
+		const math::Vector2f text = measure_text(theme, m_text, theme.text_size);
+		return { m_clip_text ? 0.0f : text.x, text.y };
 	}
 
 	math::Vector2f Button::measure_content(const Theme& theme)

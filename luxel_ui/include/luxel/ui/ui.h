@@ -57,6 +57,7 @@ namespace luxel::ui
 		bool mouse_down(const Event& event);
 		bool mouse_up(const Event& event);
 		void mouse_cancel();
+		bool mouse_wheel(const Event& event);
 		void refresh_hover();
 
 		void destroy_removed();

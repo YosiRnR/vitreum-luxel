@@ -47,6 +47,9 @@ namespace luxel::ui
 		case EventType::MouseMove:
 			m_mouse = event.position;
 			refresh_hover();
+			if (m_captured != nullptr) {
+				m_captured->on_mouse_drag(event);
+			}
 			break;
 		case EventType::MouseLeave:
 			// La captura NO se pierde: con el botón apretado, la ventana sigue
@@ -56,6 +59,7 @@ namespace luxel::ui
 			break;
 		case EventType::MouseDown:   return mouse_down(event);
 		case EventType::MouseUp:     return mouse_up(event);
+		case EventType::MouseWheel:  return mouse_wheel(event);
 		case EventType::MouseCancel: mouse_cancel(); break;
 		}
 		return m_hovered != nullptr || m_captured != nullptr;
@@ -103,6 +107,24 @@ namespace luxel::ui
 		widget->on_mouse_up(event);
 		refresh_hover();   // sin captura, los demás vuelven a iluminarse
 		return true;
+	}
+
+	bool Ui::mouse_wheel(const Event& event)
+	{
+		// Con un botón apretado no se hace caso a la rueda: movería la lista debajo de lo
+		// que se está arrastrando.
+		if (m_captured != nullptr) {
+			return true;
+		}
+		Widget* const target = m_hovered;
+		for (Widget* widget = target; widget != nullptr; widget = widget->parent())
+		{
+			if (widget->on_mouse_wheel(event)) {
+				break;
+			}
+		}
+		// Lo que haya ahora bajo el ratón lo mirará update(), cuando se coloque de nuevo.
+		return target != nullptr;
 	}
 
 	void Ui::mouse_cancel()

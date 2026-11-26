@@ -494,54 +494,12 @@ static void draw_iria_scene(luxel::Renderer2D& r2d, const Scene& scene, const Ir
 	});
 }
 
-// Lista que se desplaza sola dentro de un panel (R4d). Dos recortes anidados:
-// el hueco de la lista y, en cada fila, la columna del nombre (los nombres largos
-// se cortan). Los cuadraditos giran: el recorte no gira con ellos.
-static void draw_scroll_list(luxel::Renderer2D& r2d, const luxel::BitmapFont& font,
-                             luxel::math::Vector2f top_left, luxel::math::Vector2f size, float time)
-{
-	r2d.draw_rounded_rect({ .top_left = top_left, .size = size, .corner_radius = 16.0f,
-	                        .color = { 0.02f, 0.05f, 0.10f, 0.75f }, .border_thickness = 2.0f,
-	                        .border_color = { 1.0f, 0.75f, 0.30f, 1.0f }, .layer = 0 });
-
-	constexpr std::u8string_view names[] = {
-		u8"Manzana", u8"Seta del bosque encantado", u8"Piña", u8"Llave", u8"Cuerda larguísima de 20 metros",
-		u8"Flor", u8"Mapa", u8"Poción de salto", u8"Galleta", u8"Linterna", u8"Piedra", u8"Pluma"
-	};
-	const float row_height = 40.0f;
-	const float inset      = 12.0f;
-	const luxel::math::Vector2f view{ top_left.x + inset, top_left.y + inset };        // el hueco
-	const luxel::math::Vector2f view_size{ size.x - 2 * inset, size.y - 2 * inset };
-
-	// Sube y baja: 0 arriba del todo, 1 abajo del todo.
-	const float hidden = std::max(0.0f, std::size(names) * row_height - view_size.y);   // lo que no cabe (si cabe todo, quieta)
-	const float scroll = (0.5f - 0.5f * std::cos(time * 0.6f)) * hidden;
-
-	r2d.push_clip_rect(view, view_size);
-	float y = view.y - scroll;
-	for (const std::u8string_view name : names)
-	{
-		r2d.draw_rounded_rect({ .top_left = { view.x, y + 2 }, .size = { view_size.x, row_height - 4 }, .corner_radius = 8.0f,
-		                        .color = { 0.10f, 0.20f, 0.35f, 1.0f }, .layer = 1 });
-		r2d.draw_quad({ .position = { view.x + 20, y + row_height * 0.5f }, .size = { 18, 18 }, .rotation = time,
-		                .color = { 1.0f, 0.75f, 0.30f, 1.0f }, .layer = 2 });
-
-		r2d.push_clip_rect({ view.x + 42, y }, { view_size.x - 52, row_height });   // columna del nombre
-		r2d.draw_text(font, name, { view.x + 42, y + 7 }, 26.0f, { 1.0f, 1.0f, 1.0f, 1.0f }, 2);
-		r2d.pop_clip_rect();
-
-		y += row_height;
-	}
-	r2d.pop_clip_rect();
-}
-
 // El HUD de Iria: un lote de UI aparte, en píxeles (begin_ui), que se dibuja
 // encima del juego. Un lote más = un draw más por ventana.
 //
 // Diferencia con tenerlo en el mundo (como en R3a): al agrandar la ventana, el
 // bosque crece con ella, pero las letras siguen midiendo los mismos píxeles.
-static void draw_iria_hud(luxel::Renderer2D& r2d, const Scene& scene, const IriaController& iria, float width, float height,
-                          const luxel::ui::Rect& list, float time)
+static void draw_iria_hud(luxel::Renderer2D& r2d, const Scene& scene, const IriaController& iria, float width, float height)
 {
 	if (!scene.font) {
 		return;
@@ -578,9 +536,6 @@ static void draw_iria_hud(luxel::Renderer2D& r2d, const Scene& scene, const Iria
 	                .color = { 0.0f, 0.0f, 0.0f, 0.5f }, .layer = 0 });
 	r2d.draw_quad({ .position = center, .size = { portrait, portrait }, .rotation = 0.15f,
 	                .texture = scene.iria_sheet.get(), .uv_min = uv_min, .uv_max = uv_max, .layer = 1 });
-
-	// --- Lista con recorte (R4d), en el sitio que le ha dado el layout de IriaMenu ---
-	draw_scroll_list(r2d, font, list.top_left(), list.size(), time);
 }
 
 // Promedia el tiempo de CPU del lote y lo pone en el título cada medio segundo.
@@ -647,7 +602,7 @@ static void render_window_frame(luxel::Device& device, luxel::Renderer2D& r2d, R
 		const float height = static_cast<float>(extent.height);
 		r2d.begin_ui(*frame, width, height);
 		render_window.menu->update(width, height);
-		draw_iria_hud(r2d, scene, iria, width, height, render_window.menu->list_rect(), time);
+		draw_iria_hud(r2d, scene, iria, width, height);
 		r2d.end();
 		quad_count += r2d.last_batch_quad_count();
 		draw_count += r2d.last_batch_draw_count();

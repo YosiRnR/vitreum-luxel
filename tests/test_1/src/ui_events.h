@@ -44,6 +44,11 @@ inline std::optional<luxel::ui::Event> to_ui(const vitreum::WinEvent& event)
 			.button   = *button
 		};
 	}
+	case WinEventType::MouseScroll:
+		if (event.scroll.yoffset == 0.0f) {
+			return std::nullopt;   // rueda horizontal
+		}
+		return luxel::ui::Event{ .type = EventType::MouseWheel, .wheel = event.scroll.yoffset };
 	case WinEventType::MouseLeave:
 		return luxel::ui::Event{ .type = EventType::MouseLeave };
 	// Sin foco: ni pulsaciones a medias ni nada iluminado detrás de otra ventana.

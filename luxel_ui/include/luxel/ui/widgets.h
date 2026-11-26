@@ -40,6 +40,10 @@ namespace luxel::ui
 		const std::u8string& text() const { return m_text; }
 		void set_text(std::u8string text) { m_text = std::move(text); }
 
+		// El texto no pide ancho: se corta donde acabe su sitio. Escenario: una lista de
+		// 260 px con un nombre de 400. Sin esto, la lista se ensancharía hasta 400.
+		void set_clip_text(bool clip) { m_clip_text = clip; }
+
 		void draw(Painter& painter) const override;
 
 	protected:
@@ -48,6 +52,7 @@ namespace luxel::ui
 	private:
 		std::u8string m_text;
 		Align m_align;
+		bool m_clip_text{ false };
 	};
 
 	enum class ButtonState

@@ -1,12 +1,14 @@
 #pragma once
 
+#include <luxel/ui/scroll.h>
 #include <luxel/ui/ui.h>
 #include <luxel/ui/widgets.h>
 #include <array>
 #include <functional>
 
 // La UI de la ventana de Iria, hecha con widgets de luxel_ui. A la derecha, una
-// columna con la lista de objetos (que se estira con la ventana) y el menú; "Jugar"
+// columna con la lista de objetos (que se estira con la ventana y se mueve con la rueda
+// o con su barra) y el menú; "Jugar"
 // esconde el menú (Escape lo devuelve), "Opciones" abre un diálogo que se quita a sí
 // mismo y "Salir" llama a on_quit.
 //
@@ -33,12 +35,12 @@ public:
 		side.set_align(Placement::End, Placement::Fill);
 		side.set_gap(20.0f);
 
-		// El sitio de la lista, que todavía la pinta el HUD a mano (será un ScrollView
-		// en U4). Se queda con todo el alto que sobre.
-		m_list_area = &side.add<Widget>();
-		m_list_area->set_ignores_mouse(true);
-		m_list_area->set_min_size({ 260.0f, 110.0f });
-		m_list_area->set_grow(1.0f);
+		// La lista de objetos. Se queda con todo el alto que sobre.
+		auto& list_panel = side.add<Panel>(k_list);
+		list_panel.set_padding(Insets::all(12.0f));
+		list_panel.set_min_size({ 260.0f, 110.0f });
+		list_panel.set_grow(1.0f);
+		fill_list(list_panel.add<ScrollView>().content());
 
 		// El menú: se aclara el borde si el ratón está en él (y no en un botón).
 		BoxStyle back_hover = k_back;
@@ -92,10 +94,35 @@ public:
 
 	void draw(luxel::Renderer2D& r2d, luxel::Frame& frame) const { m_ui.draw(r2d, frame); }
 
-	// Dónde tiene que pintar el HUD la lista de objetos.
-	luxel::ui::Rect list_rect() const { return m_list_area->rect(); }
-
 private:
+	// Una fila por objeto: [punto] [nombre]. Se aclara con el ratón encima.
+	static void fill_list(luxel::ui::Column& list)
+	{
+		using namespace luxel::ui;
+		const std::u8string names[] = {
+			u8"Manzana", u8"Seta del bosque encantado", u8"Piña", u8"Llave", u8"Cuerda larguísima de 20 metros",
+			u8"Flor", u8"Mapa", u8"Poción de salto", u8"Galleta", u8"Linterna", u8"Piedra", u8"Pluma"
+		};
+		list.set_gap(4.0f);
+		list.set_padding({ 0.0f, 0.0f, 6.0f, 0.0f });   // aire entre las filas y la barra
+		for (const std::u8string& name : names)
+		{
+			auto& row = list.add<Panel>(k_row, k_row_hover);
+			row.set_padding({ 10.0f, 3.0f, 10.0f, 3.0f });
+			auto& cells = row.add<Row>();
+			cells.set_gap(12.0f);
+
+			auto& dot = cells.add<Panel>(BoxStyle{ .color = { 1.0f, 0.75f, 0.30f, 1.0f }, .corner_radius = 9.0f });
+			dot.set_min_size({ 18.0f, 18.0f });
+			dot.set_align(Placement::Fill, Placement::Center);
+			dot.set_ignores_mouse(true);   // el ratón es de la fila entera
+
+			auto& label = cells.add<Label>(name);
+			label.set_clip_text(true);     // los nombres largos se cortan
+			label.set_grow(1.0f);
+		}
+	}
+
 	void open_options()
 	{
 		using namespace luxel::ui;
@@ -144,11 +171,17 @@ private:
 		.border_thickness = 2.0f, .border_color = { 1.0f, 0.85f, 0.35f, 1.0f }
 	};
 
+	static constexpr luxel::ui::BoxStyle k_list{
+		.color = { 0.02f, 0.05f, 0.10f, 0.75f }, .corner_radius = 16.0f,
+		.border_thickness = 2.0f, .border_color = { 1.0f, 0.75f, 0.30f, 1.0f }
+	};
+	static constexpr luxel::ui::BoxStyle k_row{ .color = { 0.10f, 0.20f, 0.35f, 1.0f }, .corner_radius = 8.0f };
+	static constexpr luxel::ui::BoxStyle k_row_hover{ .color = { 0.20f, 0.38f, 0.62f, 1.0f }, .corner_radius = 8.0f };
+
 	luxel::ui::Ui m_ui;
 
 	// Punteros a widgets del árbol: no son dueños (lo es m_ui).
 	luxel::ui::Stack*  m_screen{ nullptr };
-	luxel::ui::Widget* m_list_area{ nullptr };
 	luxel::ui::Panel*  m_panel{ nullptr };
 	luxel::ui::Panel*  m_dialog{ nullptr };         // nullptr = cerrado
 	luxel::ui::Column* m_dialog_lines{ nullptr };

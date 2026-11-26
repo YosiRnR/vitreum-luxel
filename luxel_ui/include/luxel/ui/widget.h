@@ -134,6 +134,15 @@ namespace luxel::ui
 		// ratón. Con false se le pregunta a su padre, y así hacia arriba.
 		virtual bool on_mouse_down(const Event&) { return false; }
 
+		// El ratón se mueve con el botón apretado. Solo le llega al que capturó, y aunque
+		// el ratón esté fuera de él.
+		virtual void on_mouse_drag(const Event&) {}
+
+		// Han girado la rueda encima. Sube hacia arriba como on_mouse_down: devolver true =
+		// "es para mí". Escenario: la rueda sobre un botón de una lista; el botón no la
+		// quiere y acaba llegando a la lista.
+		virtual bool on_mouse_wheel(const Event&) { return false; }
+
 		// Solo le llegan al que capturó, una de las dos y una sola vez por pulsación.
 		// En on_mouse_up, hovered() dice si se ha soltado encima de él.
 		virtual void on_mouse_up(const Event&) {}

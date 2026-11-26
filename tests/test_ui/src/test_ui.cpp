@@ -1,8 +1,10 @@
-// Pruebas de luxel_ui (hitos U1 a U3), sin ventana ni GPU: se inventan los eventos del
+// Pruebas de luxel_ui (hitos U1 a U4), sin ventana ni GPU: se inventan los eventos del
 // ratón y se mira qué widget lo tiene encima. Casi todo con la API pública
-// (el hit test se prueba a través de Ui); de luxel_ui/src solo ve distribute.h.
+// (el hit test se prueba a través de Ui); de luxel_ui/src solo ve distribute.h y scroll_math.h.
 
 #include "distribute.h"
+#include "scroll_math.h"
+#include <luxel/ui/scroll.h>
 #include <luxel/ui/ui.h>
 #include <luxel/ui/widgets.h>
 #include <cmath>
@@ -77,6 +79,13 @@ namespace
 	public:
 		Fixed(float width, float height, float grow = 0.0f) { set_min_size({ width, height }); set_grow(grow); }
 	};
+
+	bool wheel(Ui& ui, float notches)
+	{
+		return ui.on_event({ .type = EventType::MouseWheel, .wheel = notches });
+	}
+
+	bool near(float a, float b) { return std::abs(a - b) < 0.01f; }
 
 	// Mueve el ratón y devuelve lo que queda debajo.
 	Widget* at(Ui& ui, float x, float y)
@@ -630,6 +639,201 @@ static void test_relayout()
 	CHECK(button.rect().height == ui.theme().text_size + 2 * ui.theme().button_padding.y);
 }
 
+// 18. Las cuentas de la barra, a solas.
+static void test_scroll_math()
+{
+	std::cout << "[18] cuentas de la barra\n";
+
+	// El escenario de scroll_math.cpp: se ven 200 de 1000 px, con un carril de 200.
+	const ScrollRange list{ .view = 200, .content = 1000, .track = 200, .min_thumb = 24 };
+	CHECK(near(thumb_for_scroll(list, 0).length, 40));
+	CHECK(near(thumb_for_scroll(list, 0).start, 0));
+	CHECK(near(thumb_for_scroll(list, 400).start, 80));
+	CHECK(near(thumb_for_scroll(list, 800).start, 160));     // al final: 160 + 40 = 200, pegado abajo
+	CHECK(near(scroll_for_thumb(list, 10), 50));
+	CHECK(near(scroll_for_thumb(list, 160), 800));
+
+	// Un carril más corto que la ventana: el pulgar es proporcional al CARRIL.
+	const ScrollRange shorter{ .view = 200, .content = 1000, .track = 150, .min_thumb = 24 };
+	CHECK(near(thumb_for_scroll(shorter, 0).length, 30));
+	CHECK(near(thumb_for_scroll(shorter, 800).start, 120));
+	CHECK(near(scroll_for_thumb(shorter, 60), 400));
+
+	// Lista larguísima: le tocarían 4 px, se queda en 24. Y aun así llega al final justo.
+	const ScrollRange huge{ .view = 200, .content = 10000, .track = 200, .min_thumb = 24 };
+	CHECK(near(thumb_for_scroll(huge, 0).length, 24));
+	CHECK(near(thumb_for_scroll(huge, 9800).start, 176));
+	CHECK(near(scroll_for_thumb(huge, 176), 9800));
+	CHECK(near(scroll_for_thumb(huge, 88), 4900));           // a la mitad, la mitad
+
+	// Cabe todo, o justo: pulgar entero, y nada de dividir entre cero.
+	for (const float content : { 0.0f, 150.0f, 200.0f })
+	{
+		const ScrollRange fits{ .view = 200, .content = content, .track = 200, .min_thumb = 24 };
+		CHECK(near(thumb_for_scroll(fits, 0).start, 0) && near(thumb_for_scroll(fits, 0).length, 200));
+		CHECK(near(scroll_for_thumb(fits, 0), 0));
+		CHECK(near(scroll_for_thumb(fits, 50), 0));
+	}
+
+	// Carril más corto que el pulgar mínimo: no se sale, y no puede moverse.
+	const ScrollRange tiny{ .view = 10, .content = 1000, .track = 10, .min_thumb = 24 };
+	CHECK(near(thumb_for_scroll(tiny, 0).length, 10));
+	CHECK(near(thumb_for_scroll(tiny, 990).start, 0));
+	CHECK(near(scroll_for_thumb(tiny, 0), 0));
+	CHECK(near(scroll_for_thumb(tiny, 5), 0));
+
+	// Ida y vuelta: una función deshace la otra.
+	bool round_trip = true;
+	for (const ScrollRange& range : { list, shorter, huge }) {
+		for (float scroll = 0.0f; scroll <= range.content - range.view; scroll += 37.0f) {
+			round_trip = round_trip && std::abs(scroll_for_thumb(range, thumb_for_scroll(range, scroll).start) - scroll) < 0.1f;
+		}
+	}
+	CHECK(round_trip);
+}
+
+// Una lista de 10 filas de 40 px (400) en una ventana de 200x100: sobran 300.
+static std::vector<Widget*> fill(ScrollView& list, int count = 10)
+{
+	std::vector<Widget*> rows;
+	for (int i = 0; i < count; ++i) {
+		rows.push_back(&list.content().add<Fixed>(50.0f, 40.0f));
+	}
+	return rows;
+}
+
+// 19. ScrollView: layout, rueda y límites.
+static void test_scroll_view()
+{
+	std::cout << "[19] ScrollView y la rueda\n";
+	Ui ui;
+	auto& list = ui.root().add<ScrollView>();
+	const auto rows = fill(list);
+	ui.update(200, 100);
+	CHECK(list.desired_size().x == 62 && list.desired_size().y == 0);   // 50 + la barra; a lo alto no pide
+	CHECK(list.bar().visible() && (list.bar().rect() == Rect{ 188, 0, 12, 100 }));
+	CHECK((rows[0]->rect() == Rect{ 0, 0, 188, 40 }));
+	CHECK(list.max_scroll() == 300);
+
+	// La rueda hacia abajo (negativa) sube las filas. Con el ratón quieto, lo de debajo cambia.
+	CHECK(at(ui, 10, 10) == rows[0]);
+	CHECK(wheel(ui, -1));                    // la fila no la quiere y sube hasta la lista
+	CHECK(list.scroll() == 60);
+	ui.update(200, 100);
+	CHECK(rows[0]->rect().y == -60);
+	CHECK(ui.hovered() == rows[1]);
+
+	// Los topes.
+	wheel(ui, -100);
+	CHECK(list.scroll() == 300);
+	ui.update(200, 100);
+	CHECK((rows[9]->rect() == Rect{ 0, 60, 188, 40 }));   // la última, pegada abajo
+	wheel(ui, 100);
+	CHECK(list.scroll() == 0);
+
+	// Media muesca (trackpad): se acumula, y las filas siempre en píxel entero.
+	ui.theme().scroll_step = 25.0f;
+	ui.update(200, 100);
+	wheel(ui, -0.5f);
+	CHECK(list.scroll() == 12.5f);
+	ui.update(200, 100);
+	CHECK(rows[0]->rect().y == std::round(rows[0]->rect().y));
+	wheel(ui, -0.5f);
+	CHECK(list.scroll() == 25.0f);
+
+	// Fuera de la ventana no hay a quién dársela.
+	ui.on_event({ .type = EventType::MouseLeave });
+	CHECK(!wheel(ui, -1));
+	CHECK(list.scroll() == 25.0f);
+
+	// Estaba al final y la ventana crece: sin hueco debajo.
+	list.set_scroll(1000);
+	ui.update(200, 250);
+	CHECK(list.scroll() == 150 && rows[9]->rect().y == 210);
+
+	// Se quitan filas: lo mismo. Y si cabe todo, sin barra y a todo el ancho.
+	for (int i = 4; i < 10; ++i) { rows[static_cast<size_t>(i)]->remove(); }
+	ui.update(200, 250);
+	CHECK(list.scroll() == 0 && list.max_scroll() == 0 && !list.bar().visible());
+	CHECK((rows[0]->rect() == Rect{ 0, 0, 200, 40 }));
+	CHECK(at(ui, 10, 10) == rows[0]);
+	CHECK(wheel(ui, -1) && list.scroll() == 0);
+}
+
+// 20. La barra: agarrar, arrastrar, pasarse y volver.
+static void test_scroll_bar()
+{
+	std::cout << "[20] arrastrar la barra\n";
+	Ui ui;
+	auto& list = ui.root().add<ScrollView>();
+	const auto rows = fill(list);
+	ui.update(200, 100);
+	// Carril de 100; pulgar de 100 * 100/400 = 25; recorrido 75 para 300: 4 px por píxel.
+	CHECK((list.bar().thumb_rect() == Rect{ 188, 0, 12, 25 }));
+
+	down(ui, 194, 10);
+	CHECK(ui.captured() == &list.bar());
+	CHECK(list.scroll() == 0);                      // al agarrarlo no salta
+	at(ui, 194, 20);
+	CHECK(near(list.scroll(), 40));
+	at(ui, 20, 30);                                 // el ratón se sale de la barra: se sigue arrastrando
+	CHECK(near(list.scroll(), 80));
+	CHECK(!rows[0]->hovered());
+	CHECK(wheel(ui, -1) && near(list.scroll(), 80));   // arrastrando, la rueda no cuenta
+
+	// Se pasa de largo y vuelve: el pulgar sigue agarrado por el mismo sitio.
+	at(ui, 194, 5000);
+	CHECK(list.scroll() == 300);
+	ui.update(200, 100);
+	CHECK(near(list.bar().thumb_rect().y, 75));
+	at(ui, 194, -5000);
+	CHECK(list.scroll() == 0);
+	at(ui, 194, 20);
+	CHECK(near(list.scroll(), 40));
+	up(ui, 194, 20);
+	at(ui, 194, 60);                                // suelto: ya no se mueve
+	CHECK(near(list.scroll(), 40) && ui.captured() == nullptr);
+
+	// Clic en el carril: el pulgar salta y queda centrado en el ratón (80 - 12,5 = 67,5).
+	ui.update(200, 100);
+	down(ui, 194, 80);
+	CHECK(near(list.scroll(), 270));
+	up(ui, 194, 80);
+
+	// El derecho no arrastra, y un Alt+Tab a medias lo suelta.
+	ui.update(200, 100);
+	down(ui, 194, 80, MouseButton::Right);
+	at(ui, 194, 40);
+	CHECK(near(list.scroll(), 270));
+	up(ui, 194, 40, MouseButton::Right);
+	down(ui, 194, 80);
+	ui.on_event({ .type = EventType::MouseCancel });
+	at(ui, 194, 40);
+	CHECK(near(list.scroll(), 270));
+}
+
+// 21. Una lista dentro de otra: la de fuera solo se mueve cuando la de dentro ya no puede.
+static void test_nested_scroll()
+{
+	std::cout << "[21] una lista dentro de otra\n";
+	Ui ui;
+	auto& outer = ui.root().add<ScrollView>();
+	auto& inner = outer.content().add<ScrollView>();
+	inner.set_min_size({ 0.0f, 80.0f });
+	fill(inner, 4);                                    // 160 en 80: sobran 80
+	outer.content().add<Fixed>(50.0f, 200.0f);         // 280 en 100: sobran 180
+	ui.update(200, 100);
+	CHECK(inner.max_scroll() == 80 && outer.max_scroll() == 180);
+
+	at(ui, 10, 10);
+	wheel(ui, -1);
+	CHECK(inner.scroll() == 60 && outer.scroll() == 0);
+	wheel(ui, -1);
+	CHECK(inner.scroll() == 80 && outer.scroll() == 0);    // se gasta en la de dentro
+	wheel(ui, -1);
+	CHECK(inner.scroll() == 80 && outer.scroll() == 60);   // esa ya no puede más
+}
+
 int main()
 {
 	test_rect();
@@ -649,6 +853,10 @@ int main()
 	test_linear();
 	test_stack();
 	test_relayout();
+	test_scroll_math();
+	test_scroll_view();
+	test_scroll_bar();
+	test_nested_scroll();
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;
