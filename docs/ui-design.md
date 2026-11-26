@@ -1,6 +1,6 @@
 # Diseño de la librería de UI (`luxel_ui`)
 
-> **Estado: U1, U2 y U3 hechos; siguiente, U4.** Las decisiones están numeradas
+> **Estado: U1-U4 hechos; siguiente, U5.** Las decisiones están numeradas
 > (D1-D9) para poder hablar de ellas una a una.
 
 Widgets (botones, listas, cajas de texto, paneles) por encima del `Renderer2D`,
@@ -170,7 +170,7 @@ Cada uno acaba en algo visible. Entre paréntesis, la parte más formativa.
   normal, encima, pulsado, pulsado pero con el ratón fuera.)
 - **U3. Layout. (Hecho.)** `Row`, `Column`, `Stack`, márgenes, separación y `grow`. Demo: el
   panel se adapta al tamaño de la ventana. (Repartir el espacio que sobra.)
-- **U4. Scroll.** `ScrollView` sobre el recorte de R4d, rueda y barra que se
+- **U4. Scroll. (Hecho.)** `ScrollView` sobre el recorte de R4d, rueda y barra que se
   arrastra. Demo: la lista de objetos, ahora con la rueda. (Pasar de píxeles de
   barra a píxeles de contenido.)
 - **U5. Foco y texto.** Tab, teclado y `TextField`. Demo: escribir un nombre y que
@@ -187,7 +187,7 @@ ratón fuera de la ventana), rueda, teclado y `CharInput`. Falta o conviene revi
 | Qué | Para | Nota |
 |---|---|---|
 | Aviso de que el ratón sale de la ventana (`WM_MOUSELEAVE`) | U1 | si no, el último widget se queda iluminado |
-| `MouseScroll` no trae posición | U4 | la UI usa la del último movimiento; vale |
+| `MouseScroll` no trae posición | U4 | la UI usa la del último movimiento (hecho en U4: `MouseWheel` sin posición) |
 | `ReleaseCapture` solo al soltar el último botón (hecho en U2) | U2 | con dos botones pulsados, soltar uno perdía la captura del otro |
 | `CharInput` manda también teclas de control (Retroceso = 8) | U5 | filtrarlas en la UI |
 | `CharInput` manda los emoji en dos mitades UTF-16 | U5 | juntarlas en vitreum |

@@ -523,9 +523,30 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   Bresenham, para que la suma sea exacta; exige `desired` y `available` enteros. Se
   comprobó con 1,1 millones de repartos al azar. `Theme::button_padding` y
   `measure_text` libre en `painter.h`. `test_1`: `IriaMenu` sin cuentas de posiciones
-  (la lista se estira con la ventana, el diálogo crece y se recentra); la lista la
-  sigue pintando el HUD en `list_rect()` hasta U4. `test_ui`: 17 casos.
-- Siguiente: U4 de `docs/ui-design.md` (`ScrollView`: rueda y barra que se arrastra).
+  (la lista se estira con la ventana, el diálogo crece y se recentra). `test_ui`: 17
+  casos.
+- Hecho (U4, scroll): evento `MouseWheel` (`Event::wheel` en muescas, positivo =
+  arriba, sin posición: vale la del último movimiento). `Widget::on_mouse_drag`
+  (solo al que capturó, aunque el ratón esté fuera) y `on_mouse_wheel` (sube por el
+  árbol como `on_mouse_down`; con un botón capturado la rueda se ignora). En
+  `include/luxel/ui/scroll.h`: `ScrollView` = una ventana que recorta (`Widget`
+  normal) con `content()` (una `Column`) dentro, colocada `round(scroll)` px más
+  arriba (scroll en float, filas en píxel entero), y una `ScrollBar` que se oculta
+  si cabe todo (el ancho cuenta siempre con ella para no bailar). El scroll se
+  recorta en `arrange_children` (agrandar la ventana al final de la lista no deja
+  hueco) y en `set_scroll`; en el tope, `on_mouse_wheel` devuelve false y la rueda
+  pasa a la lista de fuera. `ScrollView` no pide alto. `ScrollBar`: `m_grab`
+  (dónde se agarró el pulgar, para que no salte), clic en el carril = el pulgar se
+  centra en el ratón y se sigue arrastrando; `on_change(scroll)`. Las cuentas, sin
+  GPU, en `src/scroll_math.*` (`ScrollRange`, `Thumb`, `thumb_for_scroll` y
+  `scroll_for_thumb`, escritas por el usuario): regla de tres entre lo escondido y
+  lo que le queda al pulgar, con pulgar mínimo (`ScrollBarStyle::min_thumb`; el
+  recorrido sale del largo ya corregido) y sin dividir entre cero. `Theme`:
+  `scroll_bar` y `scroll_step` (60 px por muesca). `Label::set_clip_text` (no pide
+  ancho y recorta: un nombre largo no ensancha la lista). `test_1`: la lista del
+  menú de Iria es un `Panel` con `ScrollView` (adiós a `list_rect()` y a pintarla
+  desde el HUD). `test_ui`: 21 casos.
+- Siguiente: U5 de `docs/ui-design.md` (foco y texto: Tab, teclado y `TextField`).
   Aparcado para después: rasterizar TTF a mano y R5 (3D).
 - Entorno de compilación (para el asistente): desde Git Bash, cargar
   `vcvars64.bat` de VS 2026 (`C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Auxiliary\Build`)
