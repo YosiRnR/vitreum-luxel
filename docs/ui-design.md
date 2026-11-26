@@ -1,6 +1,6 @@
 # Diseño de la librería de UI (`luxel_ui`)
 
-> **Estado: U1-U4 hechos; siguiente, U5.** Las decisiones están numeradas
+> **Estado: U1-U5 hechos (plan completo).** Las decisiones están numeradas
 > (D1-D9) para poder hablar de ellas una a una.
 
 Widgets (botones, listas, cajas de texto, paneles) por encima del `Renderer2D`,
@@ -173,7 +173,7 @@ Cada uno acaba en algo visible. Entre paréntesis, la parte más formativa.
 - **U4. Scroll. (Hecho.)** `ScrollView` sobre el recorte de R4d, rueda y barra que se
   arrastra. Demo: la lista de objetos, ahora con la rueda. (Pasar de píxeles de
   barra a píxeles de contenido.)
-- **U5. Foco y texto.** Tab, teclado y `TextField`. Demo: escribir un nombre y que
+- **U5. Foco y texto. (Hecho.)** Tab, teclado y `TextField`. Demo: escribir un nombre y que
   el HUD salude con él. (Cursor en UTF-8: borrar "ñ" son 2 bytes.)
 
 Después, según lo pida el editor: casillas, deslizadores, menús, árbol de nodos,
@@ -189,6 +189,6 @@ ratón fuera de la ventana), rueda, teclado y `CharInput`. Falta o conviene revi
 | Aviso de que el ratón sale de la ventana (`WM_MOUSELEAVE`) | U1 | si no, el último widget se queda iluminado |
 | `MouseScroll` no trae posición | U4 | la UI usa la del último movimiento (hecho en U4: `MouseWheel` sin posición) |
 | `ReleaseCapture` solo al soltar el último botón (hecho en U2) | U2 | con dos botones pulsados, soltar uno perdía la captura del otro |
-| `CharInput` manda también teclas de control (Retroceso = 8) | U5 | filtrarlas en la UI |
-| `CharInput` manda los emoji en dos mitades UTF-16 | U5 | juntarlas en vitreum |
-| Cursor de texto y de redimensionar | U5 | hoy solo la flecha |
+| `CharInput` manda también teclas de control (Retroceso = 8) | U5 | filtradas en `Ui` (hecho en U5) |
+| `CharInput` manda los emoji en dos mitades UTF-16 | U5 | se juntan en vitreum (hecho en U5) |
+| Cursor de texto y de redimensionar | U5 | hecho el de texto (`Window::set_cursor_shape`); el de redimensionar, cuando haya paneles que se redimensionen |

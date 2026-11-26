@@ -546,8 +546,41 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   ancho y recorta: un nombre largo no ensancha la lista). `test_1`: la lista del
   menú de Iria es un `Panel` con `ScrollView` (adiós a `list_rect()` y a pintarla
   desde el HUD). `test_ui`: 21 casos.
-- Siguiente: U5 de `docs/ui-design.md` (foco y texto: Tab, teclado y `TextField`).
-  Aparcado para después: rasterizar TTF a mano y R5 (3D).
+- Hecho (U5, foco y texto; plan de `docs/ui-design.md` completo): eventos `KeyDown`
+  (`Key` con las teclas que la UI usa por su nombre, el resto `Unknown` pero se
+  mandan igual; `shift`, `repeat`) y `Text` (`codepoint`, aparte de `KeyDown`).
+  Foco: uno como mucho (`Ui::focused()`, `set_focus()`); `FocusMode` `None` /
+  `Keyboard` (solo Tab: un botón, para que tras un clic en "Jugar" el espacio siga
+  siendo del juego) / `All` (también clic: la caja de texto). Tab y Mayúsculas+Tab
+  recorren los visibles en orden del árbol dando la vuelta; un clic da el foco al
+  primero `All` subiendo desde el del ratón o se lo quita a todos (clic fuera = el
+  teclado vuelve al juego); Escape sin dueño lo suelta; esconder o quitar al que lo
+  tiene (o a un antepasado) lo suelta (`drop_hidden_focus` en `update` y en cada
+  tecla). El teclado sube desde el enfocado (`on_key_down`/`on_text`, true = "es para
+  mí"); si nadie lo quiere es del juego. `Ui` filtra los caracteres de control y las
+  mitades de UTF-16. `Widget::cursor()` y `Ui::cursor()` (`Cursor` `Arrow`/`Text`).
+  `Button`: `FocusMode::Keyboard`, Enter/espacio hacen clic (la repetición no, pero
+  se la queda), marco `Theme::focus_ring` con el foco. `TextField`
+  (`include/luxel/ui/text_field.h`, `src/text_field.cpp`): texto UTF-8 y cursor en
+  bytes; flechas, Inicio, Fin, Retroceso, Supr, Enter (`on_submit`), `on_change`,
+  `set_max_length` (en caracteres); con el foco se traga todas las teclas menos Tab y
+  Escape; clic = cursor en la frontera más cercana (`m_stops`, x de cada frontera
+  calculada al medir); se desplaza para que el cursor se vea; no pide ancho;
+  `TextFieldStyle` en el tema. Pendiente: seleccionar, portapapeles, Ctrl+flechas,
+  parpadeo y desplazar una lista hasta el enfocado. `src/utf8_edit.*` (sin GPU):
+  `encode_utf8`, `count_codepoints` y `previous_boundary`/`next_boundary` (escritas
+  por el usuario: retroceden/avanzan mientras haya bytes de continuación
+  `(b & 0xC0) == 0x80`, sin salirse de 0 ni de `size()`; robustas con UTF-8 roto).
+  vitreum: `Window::set_cursor_shape(CursorShape)` (`WM_SETCURSOR` en el área
+  cliente; al cambiar, `SetCursor` solo si el ratón está sobre ESTA ventana) y
+  `WM_CHAR` junta las dos mitades de UTF-16 de los emoji. `test_1`: `to_ui` traduce
+  teclas y texto (soltar teclas no se manda: el juego siempre se entera); primero la
+  UI y luego el `KeyboardState`, salvo las teclas que la UI se ha quedado; caja "Tu
+  nombre" (12 caracteres, Enter devuelve el teclado al juego) y el HUD saluda con
+  ella; puntero "I" encima. `test_ui`: 26 casos. Trampa vista al probar con mensajes
+  falsos: `PostMessage` sin `CharSet` en C# es `PostMessageA` y estropea los WM_CHAR.
+- Siguiente: por decidir. Aparcado: rasterizar TTF a mano, R5 (3D) y más widgets
+  (casillas, deslizadores, menús...) cuando los pida el editor.
 - Entorno de compilación (para el asistente): desde Git Bash, cargar
   `vcvars64.bat` de VS 2026 (`C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Auxiliary\Build`)
   y `cmake --build out/build/clangcl-debug`. No hay presets de build, solo de
