@@ -36,6 +36,9 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   hitos (R1-R6) en `docs/renderers-design.md`.
 - Librería de UI (`luxel_ui`, widgets *retained* redibujados enteros en cada
   frame) y sus hitos (U1-U5) en `docs/ui-design.md`.
+- Rasterizador de TrueType propio (`luxel_ttf`, solo std: bytes -> atlas) y sus
+  hitos (T1-T6) en `docs/ttf-design.md`; parte del código antiguo del usuario en
+  `truetype/` (sin versionar, se queda como referencia).
 - Capas de luxel: API pública en `luxel/include/luxel/` (solo puede incluir
   otras cabeceras públicas o std; nunca Vulkan); privado en `luxel/src/`,
   con backends en `luxel/src/backends/<api>/`.
@@ -579,8 +582,27 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   nombre" (12 caracteres, Enter devuelve el teclado al juego) y el HUD saluda con
   ella; puntero "I" encima. `test_ui`: 26 casos. Trampa vista al probar con mensajes
   falsos: `PostMessage` sin `CharSet` en C# es `PostMessageA` y estropea los WM_CHAR.
-- Siguiente: por decidir. Aparcado: rasterizar TTF a mano, R5 (3D) y más widgets
-  (casillas, deslizadores, menús...) cuando los pida el editor.
+- Hecho (T1, lector TTF y tablas): biblioteca `luxel_ttf/` (namespace `luxel::ttf`,
+  solo std; recibe bytes, no lee ficheros). `src/reader.h`: `Reader` big-endian que
+  comprueba cada lectura y lanza `runtime_error` con el nombre de la tabla; `sub()`
+  da un lector que solo ve un trozo (comprobado sin sumar, para no desbordar).
+  `include/luxel/ttf/font.h`: `tag("head")`, `Font(span)` (copia los bytes; lee el
+  directorio, rechaza 'OTTO'/CFF y tablas que se salen del fichero),
+  `units_per_em`, `glyph_count`, `ascent`/`descent`/`line_gap`, `metrics(glifo)`
+  (`HorizontalMetrics`), `location(glifo)` (`GlyphLocation` en 'glyf'; longitud 0 =
+  sin contornos), `table(tag)`; `out_of_range` si el glifo no existe.
+  `src/tables.*` (`detail::read_head/maxp/hhea/hmtx/loca`, solo los campos usados):
+  `head` comprueba el número mágico y el rango de `units_per_em`; `hmtx` lee también
+  la cola de solo lsb (repiten el último avance); `loca` (del `truetype/` del
+  usuario, arreglada por él: el formato corto guarda offset/2) se valida creciente y
+  dentro de 'glyf'. `tests/test_ttf` (caja blanca, fuentes de `C:\Windows\Fonts`,
+  se salta si faltan; `std::unitbuf` para ver hasta dónde llega si algo se cae): 5
+  casos (Reader, Segoe UI negrita, Lucida Console con 'loca' corta, Consolas con cola
+  en 'hmtx', ficheros rotos y cortados). Fuentes con 'loca' corta en el sistema:
+  `lucon.ttf`, `ariblk.ttf`, `corbel*.ttf`.
+- Siguiente: T2 de `docs/ttf-design.md` (`cmap`: formatos 4 y 12).
+  Aparcado: R5 (3D) y más widgets (casillas, deslizadores, menús...) cuando los
+  pida el editor.
 - Entorno de compilación (para el asistente): desde Git Bash, cargar
   `vcvars64.bat` de VS 2026 (`C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Auxiliary\Build`)
   y `cmake --build out/build/clangcl-debug`. No hay presets de build, solo de
