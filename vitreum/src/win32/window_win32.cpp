@@ -94,6 +94,8 @@ namespace vitreum
 
         CursorMode cursor_mode{ CursorMode::Normal };
         bool tracking_mouse_leave{ false };   // ya se ha pedido a Windows el próximo WM_MOUSELEAVE
+        CursorShape cursor_shape{ CursorShape::Arrow };
+        char32_t high_surrogate{ 0 };         // primera mitad de un carácter de UTF-16 (un emoji), esperando a la segunda
         // Para restaurar el clip al salir de Disabled
         bool cursor_clipped{ false };
         RECT prev_clip_rect{};
@@ -404,6 +406,38 @@ namespace vitreum
         m_pimpl->cursor_mode = mode;
     }
 
+    static HCURSOR load_cursor_shape(CursorShape shape)
+    {
+        // Los cursores del sistema son compartidos: LoadCursor no crea nada que liberar.
+        switch (shape)
+        {
+        case CursorShape::Text:  return LoadCursor(nullptr, IDC_IBEAM);
+        case CursorShape::Arrow: break;
+        }
+        return LoadCursor(nullptr, IDC_ARROW);
+    }
+
+    void Window::set_cursor_shape(CursorShape shape)
+    {
+        if (!m_pimpl || !m_pimpl->hwnd || m_pimpl->cursor_shape == shape) return;
+        m_pimpl->cursor_shape = shape;
+
+        // Windows solo lo pide (WM_SETCURSOR) cuando el ratón se mueve. Para que cambie
+        // ya, se pone a mano, pero SOLO si el ratón está en el área cliente de ESTA
+        // ventana. Escenario: dos ventanas; el ratón sale de una caja de texto de la A y
+        // entra en la B. Si la A pusiera la flecha sin mirar, se la quitaría a la B.
+        POINT point{};
+        if (m_cursor_mode == CursorMode::Normal && GetCursorPos(&point) && WindowFromPoint(point) == m_pimpl->hwnd)
+        {
+            RECT client{};
+            ScreenToClient(m_pimpl->hwnd, &point);
+            GetClientRect(m_pimpl->hwnd, &client);
+            if (PtInRect(&client, point)) {
+                SetCursor(load_cursor_shape(shape));
+            }
+        }
+    }
+
     void Window::set_cursor_position(Position position)
     {
         if (!m_pimpl || !m_pimpl->hwnd) return;
@@ -700,10 +734,42 @@ namespace vitreum
                 return 0;
             }
 
+            case WM_SETCURSOR:
+            {
+                // Windows lo pregunta cada vez que el ratón se mueve por la ventana. Si no se
+                // contesta, DefWindowProc pone el de la clase (la flecha) y el de texto solo
+                // duraría un instante. Fuera del área cliente (los bordes), lo suyo.
+                if (LOWORD(lparam) == HTCLIENT && this_window->owner->cursor_mode() == CursorMode::Normal)
+                {
+                    SetCursor(load_cursor_shape(this_window->cursor_shape));
+                    return TRUE;
+                }
+                break;
+            }
+
             case WM_CHAR:
             {
+                // Windows manda UTF-16: lo que no cabe en 16 bits (los emoji) llega en DOS
+                // WM_CHAR, una mitad alta (D800-DBFF) y luego una baja (DC00-DFFF). Se guarda
+                // la primera y se juntan al llegar la segunda: la UI recibe un carácter entero.
+                const auto unit = static_cast<char32_t>(wparam);
+                if (unit >= 0xD800 && unit <= 0xDBFF)
+                {
+                    this_window->high_surrogate = unit;
+                    return 0;
+                }
+                char32_t codepoint = unit;
+                if (unit >= 0xDC00 && unit <= 0xDFFF)
+                {
+                    if (this_window->high_surrogate == 0) {
+                        return 0;   // media letra suelta: se descarta
+                    }
+                    codepoint = 0x10000 + ((this_window->high_surrogate - 0xD800) << 10) + (unit - 0xDC00);
+                }
+                this_window->high_surrogate = 0;
+
                 WinEvent event{ WinEventType::CharInput };
-                event.text.codepoint = static_cast<char32_t>(wparam);
+                event.text.codepoint = codepoint;
                 this_window->accumulated_events.push_back(event);
                 return 0;
             }

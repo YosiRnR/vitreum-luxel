@@ -33,6 +33,21 @@ namespace luxel::ui
 		float min_thumb{ 24.0f };   // en una lista larguísima el pulgar mediría 1 px: no habría quien lo agarrase
 	};
 
+	// Una caja de texto: el fondo según el estado, el cursor (la rayita donde se escribe)
+	// y el margen del texto al canto.
+	struct TextFieldStyle
+	{
+		BoxStyle normal{  .color = { 0.03f, 0.04f, 0.07f, 0.90f }, .corner_radius = 6.0f,
+		                  .border_thickness = 1.0f, .border_color = { 1.0f, 1.0f, 1.0f, 0.35f } };
+		BoxStyle hover{   .color = { 0.03f, 0.04f, 0.07f, 0.90f }, .corner_radius = 6.0f,
+		                  .border_thickness = 1.0f, .border_color = { 1.0f, 1.0f, 1.0f, 0.70f } };
+		BoxStyle focused{ .color = { 0.03f, 0.04f, 0.07f, 0.95f }, .corner_radius = 6.0f,
+		                  .border_thickness = 2.0f, .border_color = { 1.0f, 0.85f, 0.35f, 1.0f } };
+		Color caret{ 1.0f, 0.85f, 0.35f, 1.0f };
+		float caret_width{ 2.0f };
+		math::Vector2f padding{ 10.0f, 6.0f };
+	};
+
 	// El aspecto común de toda la UI (D7 de docs/ui-design.md). Uno por Ui.
 	struct Theme
 	{
@@ -42,6 +57,13 @@ namespace luxel::ui
 		math::Vector2f button_padding{ 24.0f, 9.0f };   // del texto al canto del botón: a los lados y arriba/abajo
 		ButtonStyle button{};                // el de los botones que no traen uno propio
 		ScrollBarStyle scroll_bar{};
+		TextFieldStyle text_field{};
+
+		// El marco que rodea al widget con el foco cuando no tiene otra forma de
+		// mostrarlo (un botón al que se llega con Tab), a "focus_ring_gap" px de él.
+		BoxStyle focus_ring{ .color = { 0.0f, 0.0f, 0.0f, 0.0f }, .corner_radius = 9.0f,
+		                     .border_thickness = 2.0f, .border_color = { 1.0f, 0.85f, 0.35f, 1.0f } };
+		float focus_ring_gap{ 3.0f };
 		float scroll_step{ 60.0f };          // píxeles que se mueve una lista por cada muesca de la rueda
 	};
 

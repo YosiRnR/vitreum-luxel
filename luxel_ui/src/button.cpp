@@ -66,4 +66,17 @@ namespace luxel::ui
 		m_pressed = false;
 	}
 
+	// Con el foco: Enter o espacio hacen clic. La repetición (tecla mantenida) no: un
+	// solo clic por pulsación, como con el ratón. Las demás teclas no son suyas.
+	bool Button::on_key_down(const Event& event)
+	{
+		if (event.key != Key::Enter && event.key != Key::Space) {
+			return false;
+		}
+		if (!event.repeat && on_click) {
+			on_click();
+		}
+		return true;   // también la repetición: si no, el espacio mantenido haría saltar a Iria
+	}
+
 } // namespace luxel::ui

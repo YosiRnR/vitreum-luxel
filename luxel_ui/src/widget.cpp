@@ -70,6 +70,20 @@ namespace luxel::ui
 		}
 	}
 
+	void Widget::set_focused(bool focused)
+	{
+		if (m_focused == focused) {
+			return;
+		}
+		m_focused = focused;
+		if (focused) {
+			on_focus_gained();
+		}
+		else {
+			on_focus_lost();
+		}
+	}
+
 	void Widget::set_hovered(bool hovered)
 	{
 		if (m_hovered == hovered) {

@@ -324,15 +324,22 @@ static void process_events(RenderWindow& render_window)
 			continue;
 		}
 
-		// Teclas y foco: el KeyboardState se queda con lo que le interesa.
-		render_window.keyboard.on_event(*event);
-
-		// Ratón: a la UI, si esta ventana tiene.
+		// Primero la UI, si esta ventana tiene: ratón, teclas y texto.
+		bool used_by_ui = false;
 		if (render_window.menu)
 		{
 			if (const auto ui_event = to_ui(*event)) {
-				render_window.menu->on_event(*ui_event);
+				used_by_ui = render_window.menu->on_event(*ui_event);
 			}
+		}
+
+		// Después el juego (el KeyboardState se queda con lo que le interesa), salvo las
+		// teclas que la UI se ha quedado. Escenario: escribiendo "Dani" en la caja del
+		// nombre, la D no debe mover a Iria a la derecha. Lo demás llega siempre: soltar
+		// teclas (to_ui no lo manda) y FocusLost, para que no se atasque ninguna.
+		const bool key_down = event->type == vitreum::WinEventType::KeyPress || event->type == vitreum::WinEventType::KeyRepeat;
+		if (!(used_by_ui && key_down)) {
+			render_window.keyboard.on_event(*event);
 		}
 
 		if (event->type == vitreum::WinEventType::Close)
@@ -499,7 +506,8 @@ static void draw_iria_scene(luxel::Renderer2D& r2d, const Scene& scene, const Ir
 //
 // Diferencia con tenerlo en el mundo (como en R3a): al agrandar la ventana, el
 // bosque crece con ella, pero las letras siguen midiendo los mismos píxeles.
-static void draw_iria_hud(luxel::Renderer2D& r2d, const Scene& scene, const IriaController& iria, float width, float height)
+static void draw_iria_hud(luxel::Renderer2D& r2d, const Scene& scene, const IriaController& iria,
+                          std::u8string_view name, float width, float height)
 {
 	if (!scene.font) {
 		return;
@@ -515,9 +523,12 @@ static void draw_iria_hud(luxel::Renderer2D& r2d, const Scene& scene, const Iria
 		r2d.draw_text(font, text, top_left, size, color, 2);
 	};
 
-	shadowed_text(u8"¡Hola, Iria!", { margin, margin }, 80.0f, { 1.0f, 0.85f, 0.35f, 1.0f });
+	// El saludo, con el nombre de la caja del menú.
+	const std::u8string greeting = name.empty() ? std::u8string(u8"¡Hola!") : u8"¡Hola, " + std::u8string(name) + u8"!";
+	shadowed_text(greeting, { margin, margin }, 80.0f, { 1.0f, 0.85f, 0.35f, 1.0f });
 	// El '\n' comprueba que la segunda línea cae debajo también con +Y abajo.
-	shadowed_text(u8"Flechas o A/D: correr\nEspacio: saltar\nEsc: mostrar el menú", { margin, margin + 94.0f }, 32.0f, { 1.0f, 1.0f, 1.0f, 1.0f });
+	shadowed_text(u8"Flechas o A/D: correr\nEspacio: saltar\nEsc: mostrar el menú\nTab: recorrer el menú",
+	              { margin, margin + 94.0f }, 32.0f, { 1.0f, 1.0f, 1.0f, 1.0f });
 
 	// Estado, alineado a la derecha con measure(): ancho de la fuente * escala.
 	const float state_size  = 44.0f;
@@ -602,7 +613,8 @@ static void render_window_frame(luxel::Device& device, luxel::Renderer2D& r2d, R
 		const float height = static_cast<float>(extent.height);
 		r2d.begin_ui(*frame, width, height);
 		render_window.menu->update(width, height);
-		draw_iria_hud(r2d, scene, iria, width, height);
+		render_window.window.set_cursor_shape(to_vitreum(render_window.menu->cursor()));
+		draw_iria_hud(r2d, scene, iria, render_window.menu->player_name(), width, height);
 		r2d.end();
 		quad_count += r2d.last_batch_quad_count();
 		draw_count += r2d.last_batch_draw_count();

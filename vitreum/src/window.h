@@ -46,6 +46,13 @@ namespace vitreum
 		Disabled // Invisible + capturado (ideal para cámara FPS)
 	};
 
+	// La forma del puntero dentro de la ventana (en modo Normal).
+	enum class CursorShape : uint8_t
+	{
+		Arrow,   // la flecha de siempre
+		Text     // la "I" de escribir
+	};
+
 	class Window
 	{
 	public:
@@ -78,6 +85,8 @@ namespace vitreum
 		void go_fullscreen(bool enable);
 		void set_cursor_mode(CursorMode mode);
 		void set_cursor_position(Position position);
+		// Se puede llamar en cada frame: si no cambia, no hace nada.
+		void set_cursor_shape(CursorShape shape);
 		void cancel_close(bool close);
 
 		// Getters

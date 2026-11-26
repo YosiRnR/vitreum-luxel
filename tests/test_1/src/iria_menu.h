@@ -1,6 +1,7 @@
 #pragma once
 
 #include <luxel/ui/scroll.h>
+#include <luxel/ui/text_field.h>
 #include <luxel/ui/ui.h>
 #include <luxel/ui/widgets.h>
 #include <array>
@@ -8,9 +9,9 @@
 
 // La UI de la ventana de Iria, hecha con widgets de luxel_ui. A la derecha, una
 // columna con la lista de objetos (que se estira con la ventana y se mueve con la rueda
-// o con su barra) y el menú; "Jugar"
+// o con su barra) y el menú, con una caja para el nombre (el HUD saluda con él); "Jugar"
 // esconde el menú (Escape lo devuelve), "Opciones" abre un diálogo que se quita a sí
-// mismo y "Salir" llama a on_quit.
+// mismo y "Salir" llama a on_quit. Tab recorre la caja y los botones.
 //
 // Los widgets se crean UNA vez, en el constructor, y persisten (modo retained). En
 // cada frame se colocan (update) y se pintan. El diálogo es la excepción: nace y
@@ -50,6 +51,13 @@ public:
 		auto& buttons = m_panel->add<Column>();
 		buttons.set_gap(17.0f);
 
+		// El nombre: al escribir cambia el saludo; Enter devuelve el teclado al juego.
+		buttons.add<Label>(u8"Tu nombre:");
+		auto& name = buttons.add<TextField>(m_name);
+		name.set_max_length(12);
+		name.on_change = [this](const std::u8string& text) { m_name = text; };
+		name.on_submit = [this](const std::u8string&) { m_ui.set_focus(nullptr); };
+
 		const BoxStyle normal[3] = {
 			{ .color = { 0.05f, 0.35f, 0.80f, 1.0f }, .corner_radius = 4.0f },
 			{ .color = { 0.10f, 0.50f, 0.20f, 1.0f }, .corner_radius = 14.0f,
@@ -88,6 +96,11 @@ public:
 	bool on_event(const luxel::ui::Event& event) { return m_ui.on_event(event); }
 
 	void show() { m_panel->set_visible(true); }
+
+	const std::u8string& player_name() const { return m_name; }
+
+	// El puntero que pide la UI (la "I" encima de la caja del nombre).
+	luxel::ui::Cursor cursor() const { return m_ui.cursor(); }
 
 	// Una vez por frame: coloca todo para este tamaño de ventana.
 	void update(float width, float height) { m_ui.update(width, height); }
@@ -178,6 +191,7 @@ private:
 	static constexpr luxel::ui::BoxStyle k_row{ .color = { 0.10f, 0.20f, 0.35f, 1.0f }, .corner_radius = 8.0f };
 	static constexpr luxel::ui::BoxStyle k_row_hover{ .color = { 0.20f, 0.38f, 0.62f, 1.0f }, .corner_radius = 8.0f };
 
+	std::u8string m_name{ u8"Iria" };   // antes que m_ui: la caja se crea con él
 	luxel::ui::Ui m_ui;
 
 	// Punteros a widgets del árbol: no son dueños (lo es m_ui).

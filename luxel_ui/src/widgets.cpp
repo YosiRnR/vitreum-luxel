@@ -68,6 +68,13 @@ namespace luxel::ui
 		}
 		painter.box(rect(), *box);
 		draw_line(painter, rect(), m_text, Align::Center);
+
+		if (focused())
+		{
+			const float gap = painter.theme().focus_ring_gap;
+			const Rect r = rect();
+			painter.box({ r.x - gap, r.y - gap, r.width + 2.0f * gap, r.height + 2.0f * gap }, painter.theme().focus_ring);
+		}
 	}
 
 } // namespace luxel::ui

@@ -52,12 +52,28 @@ namespace luxel::ui
 		// El que tiene capturado el ratón (hay un botón apretado sobre él), o nullptr.
 		Widget* captured() const { return m_captured; }
 
+		// El que recibe el teclado, o nullptr (entonces el teclado es del juego).
+		Widget* focused() const { return m_focused; }
+
+		// Da el foco a "widget" (que no puede tener FocusMode::None) o, con nullptr, se lo
+		// quita a todos. Escenario: al pulsar Enter en la caja del nombre, la aplicación
+		// devuelve el teclado al juego con set_focus(nullptr).
+		void set_focus(Widget* widget);
+
+		// El puntero que toca ahora: el que pida el widget con el ratón encima (o el que
+		// lo tiene capturado). La aplicación se lo pasa a su ventana en cada frame.
+		Cursor cursor() const;
+
 	private:
 		bool dispatch(const Event& event);
 		bool mouse_down(const Event& event);
 		bool mouse_up(const Event& event);
 		void mouse_cancel();
 		bool mouse_wheel(const Event& event);
+		bool key_down(const Event& event);
+		bool text(const Event& event);
+		bool move_focus(bool backwards);
+		void drop_hidden_focus();
 		void refresh_hover();
 
 		void destroy_removed();
@@ -68,6 +84,7 @@ namespace luxel::ui
 		std::optional<math::Vector2f> m_mouse;   // vacío = el ratón está fuera de la ventana
 		Widget* m_hovered{ nullptr };
 		Widget* m_captured{ nullptr };
+		Widget* m_focused{ nullptr };
 		MouseButton m_capture_button{ MouseButton::Left };   // con cuál se capturó
 
 		// Cuántas funciones de Ui hay a medias. Un on_click puede acabar llamando otra

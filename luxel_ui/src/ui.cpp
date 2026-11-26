@@ -1,7 +1,10 @@
 #include <luxel/ui/ui.h>
 #include <luxel/ui/painter.h>
 #include "hit_test.h"
+#include <algorithm>
+#include <cassert>
 #include <utility>
+#include <vector>
 
 namespace luxel::ui
 {
@@ -26,6 +29,47 @@ namespace luxel::ui
 				}
 			}
 			return false;
+		}
+
+		// ¿Se ve? Él y todos los de encima tienen que ser visibles (uno quitado con
+		// remove() ya es invisible).
+		bool is_shown(const Widget* widget)
+		{
+			for (; widget != nullptr; widget = widget->parent()) {
+				if (!widget->visible()) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		// Los que pueden recibir el foco con Tab, en el orden del árbol (el de pintar:
+		// padre, luego sus hijos, del primero al último). Los invisibles no cuentan.
+		void collect_focusable(Widget& widget, std::vector<Widget*>& out)
+		{
+			if (!widget.visible()) {
+				return;
+			}
+			if (widget.focus_mode() != FocusMode::None) {
+				out.push_back(&widget);
+			}
+			for (const auto& child : widget.children()) {
+				collect_focusable(*child, out);
+			}
+		}
+
+		// Caracteres que no se escriben. Windows manda Retroceso (8), Enter (13), Tab (9),
+		// Escape (27) y Ctrl+letra (1 a 26) también como texto; esas teclas ya llegan como
+		// KeyDown. Y una mitad de un emoji suelta no es un carácter.
+		bool is_printable(char32_t c)
+		{
+			if (c < 0x20 || (c >= 0x7F && c <= 0x9F)) {
+				return false;   // de control
+			}
+			if (c >= 0xD800 && c <= 0xDFFF) {
+				return false;   // media letra de UTF-16
+			}
+			return c <= 0x10FFFF;
 		}
 	}
 
@@ -61,6 +105,8 @@ namespace luxel::ui
 		case EventType::MouseUp:     return mouse_up(event);
 		case EventType::MouseWheel:  return mouse_wheel(event);
 		case EventType::MouseCancel: mouse_cancel(); break;
+		case EventType::KeyDown:     return key_down(event);
+		case EventType::Text:        return text(event);
 		}
 		return m_hovered != nullptr || m_captured != nullptr;
 	}
@@ -72,6 +118,15 @@ namespace luxel::ui
 		if (m_captured != nullptr) {
 			return true;   // ya hay otro botón apretado: este se ignora hasta que suelte aquel
 		}
+
+		// El foco, al primero que lo acepte con un clic, subiendo desde el de debajo del
+		// ratón. Si no hay ninguno (un botón, un panel, el juego), nadie tiene el foco:
+		// hacer clic fuera de la caja de texto devuelve el teclado al juego.
+		Widget* focus = m_hovered;
+		while (focus != nullptr && focus->focus_mode() != FocusMode::All) {
+			focus = focus->parent();
+		}
+		set_focus(focus);
 
 		// Subida (D5): se le ofrece al de debajo del ratón y, si no lo quiere, a su
 		// padre, y así hasta la raíz.
@@ -127,6 +182,108 @@ namespace luxel::ui
 		return target != nullptr;
 	}
 
+	bool Ui::key_down(const Event& event)
+	{
+		drop_hidden_focus();
+
+		// Tab y Mayúsculas+Tab pasan el foco: no son de ningún widget.
+		if (event.key == Key::Tab) {
+			return move_focus(event.shift);
+		}
+
+		// Sube desde el que tiene el foco. Escenario: las flechas con el foco en un botón
+		// de una lista; el botón no las quiere y la lista podría usarlas.
+		for (Widget* widget = m_focused; widget != nullptr; widget = widget->parent())
+		{
+			if (widget->on_key_down(event)) {
+				return true;
+			}
+		}
+
+		// Escape suelta el foco si nadie lo ha querido: así siempre hay forma de devolverle
+		// el teclado al juego.
+		if (m_focused != nullptr && event.key == Key::Escape)
+		{
+			set_focus(nullptr);
+			return true;
+		}
+		return false;
+	}
+
+	bool Ui::text(const Event& event)
+	{
+		drop_hidden_focus();
+		if (m_focused == nullptr) {
+			return false;
+		}
+		if (!is_printable(event.codepoint)) {
+			return true;   // con foco, tampoco es del juego
+		}
+		for (Widget* widget = m_focused; widget != nullptr; widget = widget->parent())
+		{
+			if (widget->on_text(event)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool Ui::move_focus(bool backwards)
+	{
+		std::vector<Widget*> order;
+		collect_focusable(m_root, order);
+		if (order.empty()) {
+			return false;   // no hay nada que enfocar: el Tab es del juego
+		}
+
+		// Desde el que lo tiene, uno más (o uno menos), dando la vuelta al llegar al final.
+		// Si no lo tiene nadie, el primero (o el último).
+		const auto it = std::find(order.begin(), order.end(), m_focused);
+		const size_t n = order.size();
+		size_t next = 0;
+		if (it == order.end()) {
+			next = backwards ? n - 1 : 0;
+		}
+		else {
+			const size_t index = static_cast<size_t>(it - order.begin());
+			next = backwards ? (index + n - 1) % n : (index + 1) % n;
+		}
+		set_focus(order[next]);
+		return true;
+	}
+
+	void Ui::set_focus(Widget* widget)
+	{
+		assert((widget == nullptr || widget->focus_mode() != FocusMode::None) && "ese widget no admite el foco");
+		if (widget == m_focused) {
+			return;
+		}
+		// Primero lo pierde uno y luego lo gana el otro, como con el ratón.
+		Widget* const old = m_focused;
+		m_focused = widget;
+		if (old != nullptr) {
+			old->set_focused(false);
+		}
+		if (widget != nullptr) {
+			widget->set_focused(true);
+		}
+	}
+
+	// Escenario: Tab hasta "Jugar" y Enter. El botón esconde el menú, pero el foco
+	// seguiría en él: la siguiente barra espaciadora haría clic en un botón invisible.
+	void Ui::drop_hidden_focus()
+	{
+		if (m_focused != nullptr && !is_shown(m_focused)) {
+			set_focus(nullptr);
+		}
+	}
+
+	Cursor Ui::cursor() const
+	{
+		const Widget* widget = m_captured != nullptr ? m_captured : m_hovered;
+		return widget != nullptr ? widget->cursor() : Cursor::Arrow;
+	}
+
 	void Ui::mouse_cancel()
 	{
 		m_mouse.reset();
@@ -148,6 +305,7 @@ namespace luxel::ui
 		m_root.measure(m_theme);                           // de abajo arriba: ¿cuánto queréis?
 		m_root.arrange({ 0.0f, 0.0f, width, height });     // de arriba abajo: esto es lo que hay
 		refresh_hover();
+		drop_hidden_focus();
 	}
 
 	void Ui::refresh_hover()
@@ -204,6 +362,7 @@ namespace luxel::ui
 			// Se van él y todo lo suyo: que Ui no se quede apuntando a un muerto.
 			if (is_inside(m_hovered, child.get()))  { m_hovered  = nullptr; }
 			if (is_inside(m_captured, child.get())) { m_captured = nullptr; }
+			if (is_inside(m_focused, child.get()))  { m_focused  = nullptr; }
 			dead.push_back(std::move(child));   // deja un unique_ptr vacío en el sitio
 		}
 		std::erase(widget.m_children, nullptr);

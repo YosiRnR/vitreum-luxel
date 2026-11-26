@@ -1,6 +1,6 @@
 #pragma once
 
-// Los widgets básicos: Panel, Label y Button.
+// Los widgets básicos: Panel, Label y Button (la caja de texto está en text_field.h).
 
 #include <luxel/ui/layout.h>
 #include <luxel/ui/painter.h>
@@ -63,14 +63,15 @@ namespace luxel::ui
 		PressedOutside   // apretado, pero el ratón se ha ido: si se suelta, no pasa nada
 	};
 
-	// Un botón con texto. Clic = apretar Y soltar el botón izquierdo encima de él.
+	// Un botón con texto. Clic = apretar Y soltar el botón izquierdo encima de él, o
+	// Enter o la barra espaciadora con el foco (se llega a él con Tab).
 	//
 	//     auto& salir = panel.add<Button>(u8"Salir");
 	//     salir.on_click = [&] { quit = true; };   // "quit" debe vivir más que el botón
 	class Button : public Widget
 	{
 	public:
-		explicit Button(std::u8string text) : m_text(std::move(text)) {}
+		explicit Button(std::u8string text) : m_text(std::move(text)) { set_focus_mode(FocusMode::Keyboard); }
 
 		std::function<void()> on_click;   // puede estar vacía
 
@@ -86,6 +87,7 @@ namespace luxel::ui
 		bool on_mouse_down(const Event& event) override;
 		void on_mouse_up(const Event& event) override;
 		void on_mouse_cancel() override;
+		bool on_key_down(const Event& event) override;
 
 	private:
 		std::u8string m_text;

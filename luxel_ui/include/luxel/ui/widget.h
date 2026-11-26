@@ -15,6 +15,18 @@ namespace luxel::ui
 	// Dónde se pone un widget en el hueco que le da su contenedor, en una dirección.
 	enum class Placement { Fill, Start, Center, End };   // Fill = lo ocupa entero
 
+	// Cómo se le da el foco del teclado a un widget.
+	//   None:     nunca (un panel, un texto).
+	//   Keyboard: solo con Tab. Escenario: un botón. Si un clic le diera el foco, después
+	//             de pulsar "Jugar" con el ratón la barra espaciadora seguiría siendo del
+	//             botón, e Iria no saltaría.
+	//   All:      con Tab y con un clic (una caja de texto: se hace clic para escribir).
+	enum class FocusMode : uint8_t { None, Keyboard, All };
+
+	// La forma del puntero que quiere un widget con el ratón encima. La aplicación se la
+	// pasa a su ventana (Ui::cursor()).
+	enum class Cursor : uint8_t { Arrow, Text };
+
 	// Un nodo del árbol de la UI (D2 de docs/ui-design.md).
 	//
 	// Cada widget es DUEÑO de sus hijos (unique_ptr): al destruirlo mueren todos
@@ -110,6 +122,18 @@ namespace luxel::ui
 		// Durante una pulsación solo puede serlo el que la capturó.
 		bool hovered() const { return m_hovered; }
 
+		// --- Foco del teclado (D5): lo tiene uno como mucho ---
+
+		FocusMode focus_mode() const { return m_focus_mode; }
+		void set_focus_mode(FocusMode mode) { m_focus_mode = mode; }
+
+		// ¿Es el que recibe el teclado? Lo cambia Ui (con Tab, con un clic o con
+		// Ui::set_focus).
+		bool focused() const { return m_focused; }
+
+		// El puntero que quiere con el ratón encima. Por defecto, la flecha.
+		virtual Cursor cursor() const { return Cursor::Arrow; }
+
 		// Se pinta a sí mismo, sin sus hijos. Por defecto, nada.
 		virtual void draw(Painter&) const {}
 
@@ -148,9 +172,20 @@ namespace luxel::ui
 		virtual void on_mouse_up(const Event&) {}
 		virtual void on_mouse_cancel() {}
 
+		// Gana o pierde el foco.
+		virtual void on_focus_gained() {}
+		virtual void on_focus_lost() {}
+
+		// Teclado: le llega primero al que tiene el foco y sube como on_mouse_down
+		// (true = "es para mí"). Si nadie lo quiere, es del juego. Tab no llega nunca:
+		// lo usa Ui para pasar el foco.
+		virtual bool on_key_down(const Event&) { return false; }
+		virtual bool on_text(const Event&) { return false; }
+
 	private:
 		friend class Ui;   // reparte el ratón y destruye los quitados
 		void set_hovered(bool hovered);
+		void set_focused(bool focused);
 
 		std::vector<std::unique_ptr<Widget>> m_children;
 		Widget* m_parent{ nullptr };
@@ -164,6 +199,8 @@ namespace luxel::ui
 		bool m_ignores_mouse{ false };
 		bool m_clips_children{ false };
 		bool m_hovered{ false };
+		bool m_focused{ false };
+		FocusMode m_focus_mode{ FocusMode::None };
 		bool m_removed{ false };         // se ha llamado a remove(): pendiente de destruir
 		bool m_removed_below{ false };   // hay alguno así más abajo. Evita recorrer el árbol
 		                                 // entero en cada evento para buscarlos

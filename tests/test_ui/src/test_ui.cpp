@@ -1,10 +1,13 @@
-// Pruebas de luxel_ui (hitos U1 a U4), sin ventana ni GPU: se inventan los eventos del
-// ratón y se mira qué widget lo tiene encima. Casi todo con la API pública
-// (el hit test se prueba a través de Ui); de luxel_ui/src solo ve distribute.h y scroll_math.h.
+// Pruebas de luxel_ui (hitos U1 a U5), sin ventana ni GPU: se inventan los eventos del
+// ratón y del teclado y se mira qué widget los recibe. Casi todo con la API pública
+// (el hit test se prueba a través de Ui); de luxel_ui/src solo ve distribute.h,
+// scroll_math.h y utf8_edit.h.
 
 #include "distribute.h"
 #include "scroll_math.h"
+#include "utf8_edit.h"
 #include <luxel/ui/scroll.h>
+#include <luxel/ui/text_field.h>
 #include <luxel/ui/ui.h>
 #include <luxel/ui/widgets.h>
 #include <cmath>
@@ -92,6 +95,21 @@ namespace
 	{
 		ui.on_event({ .type = EventType::MouseMove, .position = { x, y } });
 		return ui.hovered();
+	}
+
+	bool key(Ui& ui, Key k, bool shift = false, bool repeat = false)
+	{
+		return ui.on_event({ .type = EventType::KeyDown, .key = k, .shift = shift, .repeat = repeat });
+	}
+
+	// Escribe letra a letra, como haría la ventana (un evento Text por carácter).
+	bool type(Ui& ui, std::u32string_view text)
+	{
+		bool used = true;
+		for (const char32_t c : text) {
+			used = ui.on_event({ .type = EventType::Text, .codepoint = c }) && used;
+		}
+		return used;
 	}
 }
 
@@ -834,6 +852,172 @@ static void test_nested_scroll()
 	CHECK(inner.scroll() == 80 && outer.scroll() == 60);   // esa ya no puede más
 }
 
+// 22. Tab pasa el foco en el orden del árbol, da la vuelta y se salta lo que no se ve.
+static void test_tab_order()
+{
+	std::cout << "[22] Tab y el orden del foco\n";
+	Ui ui;
+	CHECK(!key(ui, Key::Tab));                        // nada que enfocar: el Tab es del juego
+
+	auto& area   = free_area(ui);
+	auto& panel  = area.add<Widget>();                // no admite el foco: se salta
+	auto& a      = panel.add<Button>(u8"A");
+	auto& hidden = area.add<Button>(u8"oculto");
+	auto& b      = area.add<Button>(u8"B");
+	auto& field  = area.add<TextField>();
+	hidden.set_visible(false);
+	ui.update(400, 300);
+
+	CHECK(key(ui, Key::Tab) && ui.focused() == &a && a.focused());
+	CHECK(key(ui, Key::Tab) && ui.focused() == &b && !a.focused());
+	CHECK(key(ui, Key::Tab) && ui.focused() == &field);
+	CHECK(key(ui, Key::Tab) && ui.focused() == &a);           // da la vuelta
+	CHECK(key(ui, Key::Tab, true) && ui.focused() == &field); // Mayúsculas+Tab: hacia atrás
+
+	ui.set_focus(nullptr);
+	CHECK(key(ui, Key::Tab, true) && ui.focused() == &field); // sin foco, hacia atrás: el último
+}
+
+// 23. El clic da el foco solo a los que lo admiten con clic; Escape y lo oculto lo quitan.
+static void test_click_focus()
+{
+	std::cout << "[23] el foco con el ratón\n";
+	Ui ui;
+	auto& area   = free_area(ui);
+	auto& field  = area.add<TextField>();
+	auto& button = area.add<Button>(u8"Jugar");
+	field.set_rect({ 0, 0, 200, 40 });
+	button.set_rect({ 0, 50, 200, 40 });
+	ui.update(400, 300);
+
+	down(ui, 10, 10); up(ui, 10, 10);
+	CHECK(ui.focused() == &field);
+	CHECK(ui.cursor() == Cursor::Text);               // el puntero de texto, encima de la caja
+
+	down(ui, 10, 60); up(ui, 10, 60);                 // un botón no se queda el foco con un clic...
+	CHECK(ui.focused() == nullptr);
+	CHECK(ui.cursor() == Cursor::Arrow);
+
+	down(ui, 10, 10); up(ui, 10, 10);
+	down(ui, 300, 200); up(ui, 300, 200);             // ...y hacer clic fuera de la UI lo devuelve al juego
+	CHECK(ui.focused() == nullptr);
+
+	ui.set_focus(&field);
+	CHECK(key(ui, Key::Escape) && ui.focused() == nullptr);   // Escape lo suelta (y es de la UI)
+	CHECK(!key(ui, Key::Escape));                             // sin foco, Escape es del juego
+	CHECK(!key(ui, Key::Left) && !type(ui, U"a"));            // y todo lo demás también
+
+	ui.set_focus(&field);
+	area.set_visible(false);                          // esconder a un antepasado también lo quita
+	CHECK(!key(ui, Key::Space) && ui.focused() == nullptr && !field.focused());
+
+	area.set_visible(true);
+	ui.set_focus(&field);
+	field.remove();
+	ui.update(400, 300);
+	CHECK(ui.focused() == nullptr);                   // ni apunta a un widget destruido
+}
+
+// 24. El cursor por UTF-8: tu parte (utf8_edit.cpp).
+static void test_utf8_boundaries()
+{
+	std::cout << "[24] fronteras de UTF-8\n";
+	const std::u8string_view ana = u8"aña";           // 61 | C3 B1 | 61
+	CHECK(ana.size() == 4);
+	CHECK(previous_boundary(ana, 4) == 3);
+	CHECK(previous_boundary(ana, 3) == 1);            // la ñ entera, no medio
+	CHECK(previous_boundary(ana, 1) == 0);
+	CHECK(previous_boundary(ana, 0) == 0);            // ya en el principio
+	CHECK(next_boundary(ana, 0) == 1);
+	CHECK(next_boundary(ana, 1) == 3);
+	CHECK(next_boundary(ana, 3) == 4);
+	CHECK(next_boundary(ana, 4) == 4);                // ya en el final
+
+	const std::u8string_view euro = u8"a€";           // 61 | E2 82 AC
+	CHECK(previous_boundary(euro, 4) == 1);
+	CHECK(next_boundary(euro, 1) == 4);
+
+	const std::u8string_view smile = u8"😀😀";        // F0 9F 98 80 dos veces
+	CHECK(next_boundary(smile, 0) == 4);
+	CHECK(next_boundary(smile, 4) == 8);
+	CHECK(previous_boundary(smile, 8) == 4);
+	CHECK(previous_boundary(smile, 4) == 0);
+
+	// Lo que ya venía hecho (y usa next_boundary).
+	CHECK(count_codepoints(ana) == 3 && count_codepoints(smile) == 2 && count_codepoints(u8"") == 0);
+	CHECK(encode_utf8(U'a') == u8"a" && encode_utf8(U'ñ') == u8"ñ");
+	CHECK(encode_utf8(U'€') == u8"€" && encode_utf8(U'😀') == u8"😀");
+}
+
+// 25. Escribir y borrar en un TextField.
+static void test_text_field()
+{
+	std::cout << "[25] escribir en un TextField\n";
+	Ui ui;
+	auto& field = free_area(ui).add<TextField>();
+	int changes = 0;
+	std::u8string submitted;
+	field.on_change = [&](const std::u8string&) { ++changes; };
+	field.on_submit = [&](const std::u8string& text) { submitted = text; };
+	ui.update(400, 300);
+
+	CHECK(!type(ui, U"x") && field.text().empty());   // sin foco no escribe (y es del juego)
+
+	ui.set_focus(&field);
+	CHECK(type(ui, U"aña"));
+	CHECK(field.text() == u8"aña" && field.caret() == 4 && changes == 3);
+
+	CHECK(key(ui, Key::Left) && field.caret() == 3);
+	CHECK(key(ui, Key::Left) && field.caret() == 1);  // salta la ñ entera
+	CHECK(key(ui, Key::Right) && field.caret() == 3);
+	CHECK(key(ui, Key::Backspace));                   // borra la ñ: 2 bytes
+	CHECK(field.text() == u8"aa" && field.caret() == 1 && changes == 4);
+	CHECK(key(ui, Key::Delete));                      // borra lo de detrás: la segunda a
+	CHECK(field.text() == u8"a" && field.caret() == 1);
+	CHECK(key(ui, Key::Delete) && changes == 5);      // al final no hay nada que borrar: no avisa
+
+	CHECK(key(ui, Key::Home) && field.caret() == 0);
+	CHECK(key(ui, Key::Backspace) && changes == 5);   // ni al principio
+	type(ui, U"😀");
+	CHECK(field.text() == u8"😀a" && field.caret() == 4);
+	CHECK(key(ui, Key::End) && field.caret() == 5);
+
+	CHECK(type(ui, U"\b\r\x1B") && field.text() == u8"😀a");   // los de control no se escriben
+	CHECK(key(ui, Key::Unknown));                     // las teclas sin nombre (letras) se las traga
+	CHECK(key(ui, Key::Up));                          // y las que no usa, también
+
+	field.set_max_length(3);
+	type(ui, U"bcd");
+	CHECK(field.text() == u8"😀ab");                   // 3 caracteres (aunque sean 6 bytes)
+
+	CHECK(key(ui, Key::Enter) && submitted == u8"😀ab");
+
+	field.set_text(u8"ñ");
+	CHECK(field.caret() == 2);
+	ui.set_focus(nullptr);
+	CHECK(key(ui, Key::Tab) && field.caret() == 2);   // con Tab, el cursor al final
+}
+
+// 26. Un botón con el foco hace clic con Enter o espacio.
+static void test_button_keys()
+{
+	std::cout << "[26] el botón con el teclado\n";
+	Ui ui;
+	auto& area = free_area(ui);
+	auto& play = area.add<Button>(u8"Jugar");
+	int clicks = 0;
+	play.on_click = [&] { ++clicks; area.set_visible(false); };   // como "Jugar": esconde el menú
+	ui.update(400, 300);
+
+	key(ui, Key::Tab);
+	CHECK(ui.focused() == &play);
+	CHECK(!key(ui, Key::Left));                       // las flechas no son suyas: al juego
+	CHECK(key(ui, Key::Space, false, true) && clicks == 0);   // la repetición no hace clic...
+	CHECK(key(ui, Key::Enter) && clicks == 1);                // ...la pulsación sí
+	CHECK(!key(ui, Key::Space) && clicks == 1);       // se ha escondido: el espacio vuelve a ser del juego
+	CHECK(ui.focused() == nullptr);
+}
+
 int main()
 {
 	test_rect();
@@ -857,6 +1041,11 @@ int main()
 	test_scroll_view();
 	test_scroll_bar();
 	test_nested_scroll();
+	test_tab_order();
+	test_click_focus();
+	test_utf8_boundaries();
+	test_text_field();
+	test_button_keys();
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;
