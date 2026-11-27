@@ -11,6 +11,9 @@ add_library(luxel_ttf STATIC
     "src/reader.h"
     "src/tables.h"
     "src/tables.cpp"
+    "src/cmap.h"
+    "src/cmap.cpp"
+    "src/cmap_format4.cpp"
     "src/font.cpp"
 )
 

@@ -1,7 +1,8 @@
-// Pruebas de luxel_ttf (hito T1 de docs/ttf-design.md), sin GPU. Caja blanca: ve
-// luxel_ttf/src (reader.h). Usa las fuentes de Windows (no se versionan: tienen
+// Pruebas de luxel_ttf (hitos T1 y T2 de docs/ttf-design.md), sin GPU. Caja blanca:
+// ve luxel_ttf/src (reader.h y cmap.h). Usa las fuentes de Windows (no se versionan: tienen
 // licencia); si falta alguna, el caso lo dice y se salta.
 
+#include "cmap.h"
 #include "reader.h"
 #include <luxel/ttf/font.h>
 #include <algorithm>
@@ -205,6 +206,126 @@ static void test_broken()
 	CHECK(escaped == 0);
 }
 
+// 6. 'cmap' formato 4: de carácter a glifo (tu parte, cmap_format4.cpp).
+static void test_cmap_format4()
+{
+	std::cout << "[6] 'cmap' formato 4\n";
+	if (const auto data = load_system_font("segoeuib.ttf"))
+	{
+		const Font font(*data);
+		CHECK(font.glyph_index(U'A') == 36);
+		CHECK(font.glyph_index(U'a') == 68);
+		CHECK(font.glyph_index(U'?') == 34);
+		CHECK(font.glyph_index(U'ñ') == 120);      // tramo con idRangeOffset != 0
+		CHECK(font.glyph_index(U'€') == 189);
+		CHECK(font.glyph_index(U' ') == 3);
+		CHECK(font.location(font.glyph_index(U' ')).length == 0);   // el espacio no tiene contornos
+		CHECK(font.glyph_index(0x1F600) == 0);    // emoji: más allá del formato 4
+		CHECK(font.glyph_index(0x0378) == 0);     // sin asignar en Unicode: cae en un hueco
+		CHECK(font.glyph_index(0xFFFF) == 0);     // el último tramo, el de cierre
+		CHECK(font.glyph_index(0x10FFFF) == 0);
+	}
+	if (const auto data = load_system_font("consola.ttf"))
+	{
+		const Font font(*data);                   // otra numeración: la A no es la 36
+		CHECK(font.glyph_index(U'A') == 4 && font.glyph_index(U'a') == 131);
+		CHECK(font.glyph_index(U'ñ') == 215 && font.glyph_index(U'€') == 602);
+	}
+	if (const auto data = load_system_font("lucon.ttf"))
+	{
+		const Font font(*data);
+		CHECK(font.glyph_index(U'€') == 665);
+	}
+}
+
+// 7. Arial trae las dos: el formato 4 tuyo tiene que coincidir con el 12 en todo el
+// plano básico. Y lo que pasa de U+FFFF solo lo sabe el 12.
+static void test_cmap_formats_agree()
+{
+	std::cout << "[7] Arial: formato 4 contra formato 12\n";
+	const auto data = load_system_font("arial.ttf");
+	if (!data) {
+		return;
+	}
+	const Font font(*data);
+	const Reader cmap(font.table(tag("cmap")), "'cmap'");
+	const auto format4  = detail::read_cmap(cmap, 4);
+	const auto format12 = detail::read_cmap(cmap, 12);
+	CHECK(format4 && format4->format() == 4);
+	CHECK(format12 && format12->format() == 12);
+	if (!format4 || !format12) {
+		return;
+	}
+	int differences = 0;
+	int found = 0;
+	for (char32_t c = 0; c <= 0xFFFF; ++c)
+	{
+		const uint16_t g = format4->glyph_index(c, font.glyph_count());
+		differences += g != format12->glyph_index(c, font.glyph_count());
+		found += g != 0;
+	}
+	CHECK(differences == 0);
+	CHECK(found > 3000);                                // que no coincidan por ser todo 0
+	if (differences != 0) {
+		std::cout << "  (" << differences << " caracteres distintos)\n";
+	}
+	CHECK(format4->glyph_index(0x1DF27, font.glyph_count()) == 0);
+	CHECK(font.glyph_index(0x1DF27) == 4647);           // Font usa la 12: llega más lejos
+	CHECK(font.glyph_index(U'A') == 36);
+}
+
+// 8. Subtablas hechas a mano: formato 12 roto y un formato 4 con id_delta en glyphIdArray.
+static void test_cmap_broken()
+{
+	std::cout << "[8] 'cmap' hechas a mano\n";
+	// Cabecera de 'cmap' con una subtabla (3, 10) en el offset 12, y detrás un formato 12.
+	const auto make = [](std::initializer_list<int> groups_bytes, int group_count) {
+		std::vector<std::byte> out = bytes_of({ 0, 0, 0, 1,   0, 3, 0, 10, 0, 0, 0, 12,
+		                                        0, 12, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,
+		                                        0, 0, 0, group_count });
+		const auto rest = bytes_of(groups_bytes);
+		out.insert(out.end(), rest.begin(), rest.end());
+		return out;
+	};
+	// Un grupo bueno: U+0041..U+0043 -> glifos 10..12.
+	const auto good = make({ 0, 0, 0, 0x41,  0, 0, 0, 0x43,  0, 0, 0, 10 }, 1);
+	const auto map = detail::read_cmap(Reader(good, "'cmap'"), 12);
+	CHECK(map && map->glyph_index(U'B', 100) == 11 && map->glyph_index(U'D', 100) == 0);
+	CHECK(map && map->glyph_index(U'C', 12) == 0);       // apunta a un glifo que no existe
+
+	// Dice tener 200 grupos y trae uno.
+	const auto lying = make({ 0, 0, 0, 0x41,  0, 0, 0, 0x43,  0, 0, 0, 10 }, 200);
+	CHECK(throws_runtime_error([&] { detail::read_cmap(Reader(lying, "'cmap'"), 12); }));
+	// Dos grupos que se pisan.
+	const auto overlap = make({ 0, 0, 0, 0x41,  0, 0, 0, 0x43,  0, 0, 0, 10,
+	                            0, 0, 0, 0x43,  0, 0, 0, 0x45,  0, 0, 0, 20 }, 2);
+	CHECK(throws_runtime_error([&] { detail::read_cmap(Reader(overlap, "'cmap'"), 12); }));
+
+	// Formato 4 hecho a mano con un tramo que lee de glyphIdArray Y tiene id_delta: lo
+	// permite la especificación, pero ninguna fuente de este Windows lo hace. Dos tramos:
+	//   0: 'A'..'B', id_delta 5, id_range_offset 4 -> glyphIdArray[0..1] = { 10, 0 }
+	//   1: 0xFFFF (el de cierre), id_delta 1
+	// id_range_offset[0] = 4 bytes: de su casilla hasta glyphIdArray hay 2 casillas.
+	const auto format4 = bytes_of({ 0, 0, 0, 1,   0, 3, 0, 1, 0, 0, 0, 12,
+	                                0, 4,   0, 36,   0, 0,                 // format, length, language
+	                                0, 4,   0, 0, 0, 0, 0, 0,              // segCountX2 = 4, búsqueda
+	                                0, 0x42,  0xFF, 0xFF,                  // endCode
+	                                0, 0,                                  // reservedPad
+	                                0, 0x41,  0xFF, 0xFF,                  // startCode
+	                                0, 5,     0, 1,                        // idDelta
+	                                0, 4,     0, 0,                        // idRangeOffset
+	                                0, 10,    0, 0 });                     // glyphIdArray
+	const auto map4 = detail::read_cmap(Reader(format4, "'cmap'"), 4);
+	CHECK(map4 && map4->format() == 4);
+	if (map4)
+	{
+		CHECK(map4->glyph_index(U'A', 100) == 15);   // 10 leído + 5 de id_delta
+		CHECK(map4->glyph_index(U'B', 100) == 0);    // leído 0: no está (sin sumar id_delta)
+		CHECK(map4->glyph_index(U'C', 100) == 0);    // en el hueco antes del tramo de cierre
+		CHECK(map4->glyph_index(0xFFFF, 100) == 0);  // 0xFFFF + 1 da la vuelta a 0
+	}
+}
+
 int main()
 {
 	std::cout << std::unitbuf;   // sin búfer: si algo se cae, se ve hasta dónde llegó
@@ -213,6 +334,9 @@ int main()
 	test_short_loca();
 	test_hmtx_tail();
 	test_broken();
+	test_cmap_format4();
+	test_cmap_formats_agree();
+	test_cmap_broken();
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;

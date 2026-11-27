@@ -18,11 +18,13 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <vector>
 
 namespace luxel::ttf
 {
+	namespace detail { class CharacterMap; }
 	// Nombre de tabla de 4 letras como un entero: tag("head") == 0x68656164.
 	constexpr uint32_t tag(const char (&name)[5])
 	{
@@ -51,6 +53,13 @@ namespace luxel::ttf
 		// Copia los bytes (no hace falta mantenerlos vivos) y lee las tablas básicas.
 		// Lanza std::runtime_error si el fichero no es un TrueType válido o está roto.
 		explicit Font(std::span<const std::byte> data);
+		~Font();
+
+		// Solo movible: la 'cmap' va en un unique_ptr (su tipo es privado de luxel_ttf).
+		Font(Font&&) noexcept;
+		Font& operator=(Font&&) noexcept;
+		Font(const Font&) = delete;
+		Font& operator=(const Font&) = delete;
 
 		uint16_t units_per_em() const { return m_units_per_em; }
 		uint16_t glyph_count() const { return m_glyph_count; }
@@ -60,6 +69,10 @@ namespace luxel::ttf
 		int16_t ascent() const { return m_ascent; }
 		int16_t descent() const { return m_descent; }
 		int16_t line_gap() const { return m_line_gap; }
+
+		// El glifo de un carácter Unicode, o 0 (.notdef, el "tofu") si la fuente no lo
+		// tiene. Escenario: en Segoe UI negrita, 'A' -> 36 y U+1F600 (un emoji) -> 0.
+		uint16_t glyph_index(char32_t codepoint) const;
 
 		// Lanzan std::out_of_range si glyph >= glyph_count().
 		HorizontalMetrics metrics(uint16_t glyph) const;
@@ -84,6 +97,7 @@ namespace luxel::ttf
 		std::vector<TableRecord> m_tables;
 		std::vector<uint32_t> m_loca;                  // glyph_count + 1 offsets: el glifo i va de [i] a [i+1]
 		std::vector<HorizontalMetrics> m_metrics;      // uno por glifo
+		std::unique_ptr<const detail::CharacterMap> m_cmap;
 
 		uint16_t m_units_per_em{};
 		uint16_t m_glyph_count{};

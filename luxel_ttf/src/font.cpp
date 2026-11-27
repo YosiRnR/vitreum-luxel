@@ -1,4 +1,5 @@
 #include <luxel/ttf/font.h>
+#include "cmap.h"
 #include "reader.h"
 #include "tables.h"
 #include <algorithm>
@@ -33,6 +34,20 @@ namespace luxel::ttf
 		if (!std::ranges::is_sorted(m_loca) || m_loca.back() > glyf_size) {
 			throw std::runtime_error("ttf: 'loca' con offsets imposibles");
 		}
+
+		m_cmap = std::make_unique<const detail::CharacterMap>(
+			detail::read_best_cmap(Reader(required(tag("cmap"), "'cmap'"), "'cmap'")));
+	}
+
+	// Aquí y no en la cabecera: para destruir un unique_ptr<CharacterMap> hace falta
+	// el tipo completo, que solo se ve en este .cpp.
+	Font::~Font() = default;
+	Font::Font(Font&&) noexcept = default;
+	Font& Font::operator=(Font&&) noexcept = default;
+
+	uint16_t Font::glyph_index(char32_t codepoint) const
+	{
+		return m_cmap->glyph_index(codepoint, m_glyph_count);
 	}
 
 	// El principio del fichero:
