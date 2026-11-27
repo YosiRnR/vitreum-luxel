@@ -1,6 +1,6 @@
 # Diseño del rasterizador de TrueType (`luxel_ttf`)
 
-> **Estado: T1 y T2 hechos; siguiente, T3.** Las decisiones están numeradas (F1-F7) para
+> **Estado: T1, T2 y T3 hechos; siguiente, T4.** Las decisiones están numeradas (F1-F7) para
 > poder hablar de ellas una a una.
 
 Leer un fichero `.ttf` y pintar sus letras a mano, sin GDI ni bibliotecas de
@@ -160,7 +160,7 @@ Entre paréntesis, la parte más formativa (la que escribes tú).
   arreglar el fallo de `loca` sin que te diga dónde está: con el test delante.)
 - **T2. `cmap`. (Hecho.)** Formatos 4 y 12, búsqueda en los segmentos. (La búsqueda del
   formato 4, con su `idRangeOffset`, que es la parte retorcida.)
-- **T3. Contornos.** `glyf` simple y compuesto, puntos implícitos, `Outline` en
+- **T3. Contornos. (Hecho.)** `glyf` simple y compuesto, puntos implícitos, `Outline` en
   píxeles. (Los compuestos: aplicar el desplazamiento y la escala de cada pieza.)
 - **T4. Rasterizador.** Cobertura exacta por área acumulada. (El paso de un segmento
   al buffer de cambios: el corazón de todo.)

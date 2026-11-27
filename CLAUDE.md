@@ -617,7 +617,31 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   en un tramo de `glyph_id_array`, caso que ninguna fuente de Windows trae). Ojo al
   escribir tests desde Bash con heredoc: los `\n` de C++ se convierten en saltos de
   línea reales; mejor un script en fichero.
-- Siguiente: T3 de `docs/ttf-design.md` (contornos: `glyf` simple y compuesto).
+- Hecho (T3, contornos): `src/glyf.*` (`detail::`): `read_glyph_shape(glyf, loca,
+  glifo)` -> `GlyphShape` (`ShapePoint{x, y, on_curve}` en unidades de la fuente y
+  `contour_ends` = número del ÚLTIMO punto de cada contorno). Simples: flags con
+  repetición y coordenadas relativas (del `truetype/` del usuario, con `Reader`; los
+  finales deben crecer). Compuestos: argumentos de 1 o 2 bytes, escala única, en x/y o
+  matriz 2x2 (F2Dot14), `SCALED_COMPONENT_OFFSET`, piezas enganchadas por puntos
+  (`runtime_error` si el punto no existe) y límite de anidamiento
+  `k_max_component_depth` = 8 (un glifo que se incluye a sí mismo lanza).
+  `src/glyf_component.cpp`, escrito por el usuario: `f2dot14` (entero con signo / 2^14)
+  y `append_component` (transforma cada punto conservando `on_curve`; los finales del
+  hijo se desplazan por el número de puntos que tenía el padre ANTES de añadir; trampa
+  vista: el error de uno entre `size()` y "número del último"). `src/outline_builder.*`
+  (`build_outline(shape, escala)`, de la lógica de contornos del usuario reorganizada):
+  empieza en un punto sobre la curva (o en el punto medio si no hay ninguno), puntos
+  implícitos entre dos de control seguidos, cierra cada contorno, salta rectas de
+  longitud 0 y no deja contornos vacíos. Pública en `include/luxel/ttf/outline.h`:
+  `Point`, `OutlineSegment{from, control, to, is_curve}`, `Outline{segments,
+  contour_ends (en segmentos), min, max}`; `Font::outline(glifo, píxeles_por_em)` en
+  píxeles, origen en el lápiz sobre la línea de base y +Y abajo (la caja incluye los
+  puntos de control). `test_ttf`: 12 casos (9: 'l', 'o', 'B', espacio, ñ = 'n' + la
+  virgulilla desplazada 228 y los 5.321 glifos de Segoe UI negrita cerrados; 10:
+  `f2dot14` y `append_component`; 11: `glyf` hecho a mano, con escala, autorreferencia
+  y enganche por puntos; 12: puntos implícitos); `main` envuelve cada caso en `run()`
+  (una excepción inesperada cuenta como fallo y no aborta).
+- Siguiente: T4 de `docs/ttf-design.md` (rasterizador con cobertura exacta por área).
   Aparcado: R5 (3D) y más widgets (casillas, deslizadores, menús...) cuando los
   pida el editor.
 - Entorno de compilación (para el asistente): desde Git Bash, cargar
