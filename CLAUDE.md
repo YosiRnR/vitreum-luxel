@@ -600,7 +600,24 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   casos (Reader, Segoe UI negrita, Lucida Console con 'loca' corta, Consolas con cola
   en 'hmtx', ficheros rotos y cortados). Fuentes con 'loca' corta en el sistema:
   `lucon.ttf`, `ariblk.ttf`, `corbel*.ttf`.
-- Siguiente: T2 de `docs/ttf-design.md` (`cmap`: formatos 4 y 12).
+- Hecho (T2, `cmap`): `src/cmap.*` (`detail::`): solo subtablas Unicode (plataforma
+  0, o 3 con codificación 1 o 10); se guardan tal cual y se busca en ellas (no un mapa
+  con todos los códigos). `Format4` (tramos; `lookup` en `src/cmap_format4.cpp`,
+  escrita por el usuario: `lower_bound` sobre `end_codes`, hueco si el tramo empieza
+  después, `id_delta` módulo 65536, `glyph_id_array` con el índice calculado con signo
+  (`ptrdiff_t`) y `id_delta` sumado si lo leído no es 0) y `Format12` (grupos,
+  `lower_bound` por `end`). Validación: tramos desordenados, grupos que se pisan o que
+  no caben -> `runtime_error`. `CharacterMap` (variant) da 0 si el glifo no existe en
+  la fuente; `read_cmap(reader, formato)` y `read_best_cmap` (12 si existe, si no 4).
+  `Font::glyph_index(char32_t)` (0 = .notdef); `Font` pasa a ser solo movible (la
+  `cmap` va en un `unique_ptr` a un tipo privado; destructor y movimientos en el
+  `.cpp`). `test_ttf`: 8 casos (6: valores de Segoe UI, Consolas y Lucida Console; 7:
+  en Arial el formato 4 y el 12 coinciden en los 65.536 del plano básico y U+1DF27 solo
+  lo da el 12; 8: tablas hechas a mano, formato 12 roto y un formato 4 con `id_delta`
+  en un tramo de `glyph_id_array`, caso que ninguna fuente de Windows trae). Ojo al
+  escribir tests desde Bash con heredoc: los `\n` de C++ se convierten en saltos de
+  línea reales; mejor un script en fichero.
+- Siguiente: T3 de `docs/ttf-design.md` (contornos: `glyf` simple y compuesto).
   Aparcado: R5 (3D) y más widgets (casillas, deslizadores, menús...) cuando los
   pida el editor.
 - Entorno de compilación (para el asistente): desde Git Bash, cargar
