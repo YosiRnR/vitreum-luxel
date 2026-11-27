@@ -1,11 +1,14 @@
-// Pruebas de luxel_ttf (hitos T1 y T2 de docs/ttf-design.md), sin GPU. Caja blanca:
-// ve luxel_ttf/src (reader.h y cmap.h). Usa las fuentes de Windows (no se versionan: tienen
+// Pruebas de luxel_ttf (hitos T1 a T3 de docs/ttf-design.md), sin GPU. Caja blanca:
+// ve luxel_ttf/src (reader.h, cmap.h, glyf.h y outline_builder.h). Usa las fuentes de Windows (no se versionan: tienen
 // licencia); si falta alguna, el caso lo dice y se salta.
 
 #include "cmap.h"
+#include "glyf.h"
+#include "outline_builder.h"
 #include "reader.h"
 #include <luxel/ttf/font.h>
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <fstream>
 #include <iostream>
@@ -96,6 +99,34 @@ namespace
 }
 
 #define CHECK(cond) check((cond), #cond, __LINE__)
+
+namespace
+{
+	bool near(float a, float b, float tolerance = 0.001f) { return std::abs(a - b) <= tolerance; }
+	bool near(Point a, Point b, float tolerance = 0.001f) { return near(a.x, b.x, tolerance) && near(a.y, b.y, tolerance); }
+
+	// Que cada contorno sea una cadena cerrada: cada segmento empieza donde acaba el
+	// anterior y el último vuelve al principio.
+	bool contours_closed(const Outline& outline)
+	{
+		uint32_t first = 0;
+		for (const uint32_t end : outline.contour_ends)
+		{
+			if (end <= first || end > outline.segments.size()) {
+				return false;
+			}
+			for (uint32_t i = first; i < end; ++i)
+			{
+				const uint32_t next = (i + 1 < end) ? i + 1 : first;
+				if (!near(outline.segments[i].to, outline.segments[next].from)) {
+					return false;
+				}
+			}
+			first = end;
+		}
+		return first == outline.segments.size();
+	}
+}
 
 // 1. Reader: big-endian y sin salirse nunca.
 static void test_reader()
@@ -326,17 +357,202 @@ static void test_cmap_broken()
 	}
 }
 
+// 9. Contornos de letras de verdad (Segoe UI negrita a 2048 px por em: 1 unidad = 1 px).
+static void test_real_outlines()
+{
+	std::cout << "[9] contornos de Segoe UI negrita\n";
+	const auto data = load_system_font("segoeuib.ttf");
+	if (!data) {
+		return;
+	}
+	const Font font(*data);
+	const float em = 2048.0f;   // a este tamaño los píxeles coinciden con las unidades
+
+	const Outline l = font.outline(font.glyph_index(U'l'), em);
+	CHECK(l.contour_ends.size() == 1 && contours_closed(l));
+	CHECK(near(l.min, { 133, -1516 }) && near(l.max, { 449, 0 }));   // +Y abajo: la parte de arriba es negativa
+
+	const Outline small = font.outline(font.glyph_index(U'l'), 48.0f);   // escala 48 / 2048
+	CHECK(near(small.min, { 133 * 48.0f / em, -1516 * 48.0f / em }));
+
+	CHECK(font.outline(font.glyph_index(U'o'), em).contour_ends.size() == 2);   // el de fuera y el agujero
+	CHECK(font.outline(font.glyph_index(U'B'), em).contour_ends.size() == 3);
+	CHECK(contours_closed(font.outline(font.glyph_index(U'B'), em)));
+	CHECK(font.outline(font.glyph_index(U' '), em).empty());
+	CHECK(!font.outline(0, em).empty());   // .notdef
+
+	// La "ñ" es compuesta: la 'n' tal cual + la virgulilla (glifo 216 en esta fuente)
+	// movida 228 unidades a la derecha. Tu append_component.
+	const Outline n     = font.outline(font.glyph_index(U'n'), em);
+	const Outline tilde = font.outline(216, em);
+	const Outline enye  = font.outline(font.glyph_index(U'ñ'), em);
+	CHECK(enye.contour_ends.size() == 2 && contours_closed(enye));
+	CHECK(enye.segments.size() == n.segments.size() + tilde.segments.size());
+	if (enye.segments.size() == n.segments.size() + tilde.segments.size() && !n.empty() && !tilde.empty())
+	{
+		CHECK(near(enye.segments.front().from, n.segments.front().from));
+		const OutlineSegment& moved = enye.segments[n.segments.size()];
+		CHECK(near(moved.from, { tilde.segments.front().from.x + 228, tilde.segments.front().from.y }));
+	}
+	CHECK(near(enye.max.y, 0) && near(enye.min.y, -1497));   // de la base a la punta de la virgulilla
+
+	// Recorrer todos los glifos: ninguno se rompe y todos quedan cerrados.
+	int broken = 0;
+	for (uint32_t g = 0; g < font.glyph_count(); ++g) {
+		try {
+			if (!contours_closed(font.outline(static_cast<uint16_t>(g), 64.0f))) {
+				++broken;
+			}
+		}
+		catch (const std::exception&) {
+			++broken;
+		}
+	}
+	CHECK(broken == 0);
+	if (broken != 0) {
+		std::cout << "  (" << broken << " glifos rotos o sin cerrar)\n";
+	}
+}
+
+// 10. Tu parte, por separado: f2dot14 y append_component.
+static void test_components()
+{
+	std::cout << "[10] f2dot14 y append_component\n";
+	CHECK(detail::f2dot14(0x4000) == 1.0f);
+	CHECK(detail::f2dot14(0x2000) == 0.5f);
+	CHECK(detail::f2dot14(static_cast<int16_t>(0xC000)) == -1.0f);
+	CHECK(detail::f2dot14(static_cast<int16_t>(0x8000)) == -2.0f);
+	CHECK(detail::f2dot14(0) == 0.0f);
+	CHECK(near(detail::f2dot14(0x7FFF), 1.99993896f, 1e-6f));
+
+	// Un cuadrado de 100 con la esquina en (0, 0), un contorno de 4 puntos.
+	const detail::GlyphShape square{
+		.points = { { 0, 0, true }, { 100, 0, true }, { 100, 100, false }, { 0, 100, true } },
+		.contour_ends = { 3 }
+	};
+	detail::GlyphShape shape;
+	detail::append_component(shape, square, { .dx = 10, .dy = 20 });
+	CHECK(shape.points.size() == 4 && shape.contour_ends == std::vector<uint32_t>{ 3 });
+	CHECK(shape.points.size() == 4 && shape.points[1].x == 110 && shape.points[1].y == 20);
+	CHECK(shape.points.size() == 4 && !shape.points[2].on_curve && shape.points[3].on_curve);
+
+	detail::append_component(shape, square, { .a = 0.5f, .d = 0.5f, .dx = -5, .dy = 5 });
+	CHECK(shape.contour_ends == (std::vector<uint32_t>{ 3, 7 }));   // el segundo cuadrado son los puntos 4..7
+	CHECK(shape.points.size() == 8 && shape.points[6].x == 45 && shape.points[6].y == 55);
+
+	// Matriz completa: girar 90 grados a la izquierda, (x, y) -> (-y, x).
+	detail::GlyphShape turned;
+	detail::append_component(turned, square, { .a = 0, .b = 1, .c = -1, .d = 0 });
+	CHECK(turned.points.size() == 4 && turned.points[1].x == 0 && turned.points[1].y == 100);
+	CHECK(turned.points.size() == 4 && turned.points[2].x == -100 && turned.points[2].y == 100);
+}
+
+// 11. 'glyf' hecho a mano: simple, compuesto con escala, enganchado por puntos y uno
+// que se incluye a sí mismo.
+static void test_handmade_glyf()
+{
+	std::cout << "[11] 'glyf' hecho a mano\n";
+	const auto glyf = bytes_of({
+		// glifo 0 (32 bytes): un cuadrado de 100, 4 puntos on, coordenadas de 16 bits
+		0, 1,   0, 0, 0, 0, 0, 100, 0, 100,           // 1 contorno, caja
+		0, 3,   0, 0,                                 // endPts = { 3 }, sin instrucciones
+		0x09, 3,                                      // flag "on" + repetir 3 veces más
+		0, 0,   0, 100,   0, 0,   0xFF, 0x9C,         // x: 0, +100, 0, -100
+		0, 0,   0, 0,   0, 100,   0, 0,               // y: 0, 0, +100, 0
+		// glifo 1 (26 bytes): compuesto = glifo 0 movido (10, 20) + glifo 0 a la mitad movido (-5, 5)
+		0xFF, 0xFF,   0, 0, 0, 0, 0, 0, 0, 0,
+		0x00, 0x23,   0, 0,   0, 10,   0, 20,         // palabras, xy, hay más; glifo 0; (10, 20)
+		0x00, 0x0A,   0, 0,   0xFB, 5,   0x20, 0x00,  // bytes, xy, escala; glifo 0; (-5, 5); 0,5
+		// glifo 2 (16 bytes): se incluye a sí mismo
+		0xFF, 0xFF,   0, 0, 0, 0, 0, 0, 0, 0,
+		0x00, 0x02,   0, 2,   0, 0,
+		// glifo 3 (22 bytes): glifo 0 + otro glifo 0 con su punto 0 enganchado al punto 2 del primero
+		0xFF, 0xFF,   0, 0, 0, 0, 0, 0, 0, 0,
+		0x00, 0x22,   0, 0,   0, 0,                   // xy (0, 0), hay más
+		0x00, 0x00,   0, 0,   2, 0,                   // sin xy: arg1 = punto 2 de lo que hay, arg2 = punto 0 de la pieza
+	});
+	const std::vector<uint32_t> loca{ 0, 32, 58, 74, 96 };
+
+	const detail::GlyphShape square = detail::read_glyph_shape(glyf, loca, 0);
+	CHECK(square.points.size() == 4 && square.contour_ends == std::vector<uint32_t>{ 3 });
+	CHECK(square.points.size() == 4 && square.points[2].x == 100 && square.points[2].y == 100 && square.points[2].on_curve);
+
+	const detail::GlyphShape two = detail::read_glyph_shape(glyf, loca, 1);
+	CHECK(two.points.size() == 8 && two.contour_ends == (std::vector<uint32_t>{ 3, 7 }));
+	CHECK(two.points.size() == 8 && two.points[0].x == 10 && two.points[0].y == 20);
+	CHECK(two.points.size() == 8 && two.points[6].x == 45 && two.points[6].y == 55);
+
+	CHECK(throws_runtime_error([&] { detail::read_glyph_shape(glyf, loca, 2); }));
+
+	const detail::GlyphShape hooked = detail::read_glyph_shape(glyf, loca, 3);
+	CHECK(hooked.points.size() == 8 && hooked.points[4].x == 100 && hooked.points[4].y == 100);
+	CHECK(hooked.points.size() == 8 && hooked.points[6].x == 200 && hooked.points[6].y == 200);
+
+	// A contorno, a escala 1: 4 rectas, +Y abajo.
+	const Outline outline = detail::build_outline(square, 1.0f);
+	CHECK(outline.segments.size() == 4 && contours_closed(outline));
+	CHECK(near(outline.min, { 0, -100 }) && near(outline.max, { 100, 0 }));
+	CHECK(std::ranges::none_of(outline.segments, &OutlineSegment::is_curve));
+}
+
+// 12. Puntos implícitos: entre dos de control seguidos hay uno "en la curva" en medio.
+static void test_implicit_points()
+{
+	std::cout << "[12] puntos implicitos\n";
+	// Cuatro puntos de control, ninguno en la curva: un "círculo" de 4 cuadráticas.
+	const detail::GlyphShape round{
+		.points = { { 0, 0, false }, { 100, 0, false }, { 100, 100, false }, { 0, 100, false } },
+		.contour_ends = { 3 }
+	};
+	const Outline circle = detail::build_outline(round, 1.0f);
+	CHECK(circle.segments.size() == 4 && contours_closed(circle));
+	CHECK(std::ranges::all_of(circle.segments, &OutlineSegment::is_curve));
+	if (circle.segments.size() == 4)
+	{
+		// Empieza en el punto medio del último y el primero: (0, 50) -> (0, -50) con +Y abajo.
+		CHECK(near(circle.segments[0].from, { 0, -50 }));
+		CHECK(near(circle.segments[0].control, { 0, 0 }) && near(circle.segments[0].to, { 50, 0 }));
+	}
+
+	// on, off, on, on: una cuadrática y dos rectas (la última cierra).
+	const detail::GlyphShape mixed{
+		.points = { { 0, 0, true }, { 50, 100, false }, { 100, 0, true }, { 50, -50, true } },
+		.contour_ends = { 3 }
+	};
+	const Outline m = detail::build_outline(mixed, 1.0f);
+	CHECK(m.segments.size() == 3 && contours_closed(m));
+	CHECK(m.segments.size() == 3 && m.segments[0].is_curve && !m.segments[1].is_curve && !m.segments[2].is_curve);
+	CHECK(near(m.min, { 0, -100 }) && near(m.max, { 100, 50 }));   // la caja incluye el control
+}
+
+// Cada caso por separado: si uno lanza una excepción que no esperaba, cuenta como
+// fallo y siguen los demás (sin esto, el programa se cae con abort()).
+static void run(void (*test)())
+{
+	try {
+		test();
+	}
+	catch (const std::exception& e) {
+		++g_failures;
+		std::cout << "  FALLO: excepcion inesperada: " << e.what() << "\n";
+	}
+}
+
 int main()
 {
 	std::cout << std::unitbuf;   // sin búfer: si algo se cae, se ve hasta dónde llegó
-	test_reader();
-	test_segoe();
-	test_short_loca();
-	test_hmtx_tail();
-	test_broken();
-	test_cmap_format4();
-	test_cmap_formats_agree();
-	test_cmap_broken();
+	run(test_reader);
+	run(test_segoe);
+	run(test_short_loca);
+	run(test_hmtx_tail);
+	run(test_broken);
+	run(test_cmap_format4);
+	run(test_cmap_formats_agree);
+	run(test_cmap_broken);
+	run(test_real_outlines);
+	run(test_components);
+	run(test_handmade_glyf);
+	run(test_implicit_points);
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;

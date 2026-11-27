@@ -1,5 +1,7 @@
 #include <luxel/ttf/font.h>
 #include "cmap.h"
+#include "glyf.h"
+#include "outline_builder.h"
 #include "reader.h"
 #include "tables.h"
 #include <algorithm>
@@ -111,6 +113,15 @@ namespace luxel::ttf
 			throw std::out_of_range("ttf: glifo fuera de la fuente");
 		}
 		return m_metrics[glyph];
+	}
+
+	Outline Font::outline(uint16_t glyph, float pixels_per_em) const
+	{
+		if (glyph >= m_glyph_count) {
+			throw std::out_of_range("ttf: glifo fuera de la fuente");
+		}
+		const detail::GlyphShape shape = detail::read_glyph_shape(table(tag("glyf")), m_loca, glyph);
+		return detail::build_outline(shape, pixels_per_em / static_cast<float>(m_units_per_em));
 	}
 
 	GlyphLocation Font::location(uint16_t glyph) const

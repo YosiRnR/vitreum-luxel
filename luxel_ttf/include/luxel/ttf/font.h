@@ -16,6 +16,7 @@
 // Todo va en "unidades de la fuente": Segoe UI usa 2048 por em. Para pasar a
 // píxeles a 48 px: multiplicar por 48 / 2048.
 
+#include <luxel/ttf/outline.h>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -77,6 +78,11 @@ namespace luxel::ttf
 		// Lanzan std::out_of_range si glyph >= glyph_count().
 		HorizontalMetrics metrics(uint16_t glyph) const;
 		GlyphLocation location(uint16_t glyph) const;
+
+		// El contorno del glifo con la letra a "pixels_per_em" píxeles por em (ver
+		// outline.h: +Y abajo, origen en el lápiz y la línea de base). Vacío si no tiene
+		// contornos (el espacio). Lanza runtime_error si sus datos están rotos.
+		Outline outline(uint16_t glyph, float pixels_per_em) const;
 
 		// Los bytes de una tabla, o vacío si la fuente no la tiene.
 		std::span<const std::byte> table(uint32_t table_tag) const;

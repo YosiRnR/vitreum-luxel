@@ -8,12 +8,18 @@ project(luxel_ttf LANGUAGES CXX)
 # y, más adelante, el atlas que se le da a BitmapFont.
 add_library(luxel_ttf STATIC
     "include/luxel/ttf/font.h"
+    "include/luxel/ttf/outline.h"
     "src/reader.h"
     "src/tables.h"
     "src/tables.cpp"
     "src/cmap.h"
     "src/cmap.cpp"
     "src/cmap_format4.cpp"
+    "src/glyf.h"
+    "src/glyf.cpp"
+    "src/glyf_component.cpp"
+    "src/outline_builder.h"
+    "src/outline_builder.cpp"
     "src/font.cpp"
 )
 
