@@ -1,18 +1,22 @@
-// Pruebas de luxel_ttf (hitos T1 a T3 de docs/ttf-design.md), sin GPU. Caja blanca:
-// ve luxel_ttf/src (reader.h, cmap.h, glyf.h y outline_builder.h). Usa las fuentes de Windows (no se versionan: tienen
+// Pruebas de luxel_ttf (hitos T1 a T4 de docs/ttf-design.md), sin GPU. Caja blanca:
+// ve luxel_ttf/src (reader.h, cmap.h, glyf.h, outline_builder.h y rasterizer.h). Usa las fuentes de Windows (no se versionan: tienen
 // licencia); si falta alguna, el caso lo dice y se salta.
 
 #include "cmap.h"
 #include "glyf.h"
 #include "outline_builder.h"
+#include "rasterizer.h"
 #include "reader.h"
 #include <luxel/ttf/font.h>
+#include <luxel/ttf/raster.h>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -525,6 +529,269 @@ static void test_implicit_points()
 	CHECK(near(m.min, { 0, -100 }) && near(m.max, { 100, 50 }));   // la caja incluye el control
 }
 
+namespace
+{
+	// La suma acumulada de las primeras "count" casillas: la cobertura de cada píxel.
+	std::vector<float> running_sum(const std::vector<float>& row, std::size_t count)
+	{
+		std::vector<float> out(count);
+		float sum = 0.0f;
+		for (std::size_t i = 0; i < count; ++i) {
+			sum += row[i];
+			out[i] = sum;
+		}
+		return out;
+	}
+
+	// La misma cuenta a lo bruto: el trozo partido en muchas rayitas verticales, y cada
+	// una tapa de cada píxel lo que le queda a su derecha.
+	std::vector<float> brute_force(std::size_t count, float x_top, float x_bottom, float height)
+	{
+		constexpr int k_slices = 2000;
+		std::vector<float> out(count, 0.0f);
+		for (int k = 0; k < k_slices; ++k) {
+			const float x = x_top + (x_bottom - x_top) * (static_cast<float>(k) + 0.5f) / k_slices;
+			for (std::size_t i = 0; i < count; ++i) {
+				out[i] += height / k_slices * std::clamp(static_cast<float>(i) + 1.0f - x, 0.0f, 1.0f);
+			}
+		}
+		return out;
+	}
+
+	bool all_near(const std::vector<float>& a, const std::vector<float>& b, float tolerance)
+	{
+		if (a.size() != b.size()) {
+			return false;
+		}
+		for (std::size_t i = 0; i < a.size(); ++i) {
+			if (std::abs(a[i] - b[i]) > tolerance) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	// Llama a accumulate_piece sobre una fila nueva de "width" píxeles (+2 casillas)
+	// y devuelve la cobertura de cada píxel.
+	std::vector<float> piece(std::size_t width, float x_top, float x_bottom, float height,
+		float* total = nullptr)
+	{
+		std::vector<float> row(width + 2, 0.0f);
+		detail::accumulate_piece(row, x_top, x_bottom, height);
+		if (total) {
+			*total = 0.0f;
+			for (const float v : row) {
+				*total += v;
+			}
+		}
+		return running_sum(row, width);
+	}
+
+	// Un polígono cerrado de rectas.
+	Outline polygon(std::initializer_list<std::initializer_list<Point>> contours)
+	{
+		Outline out;
+		out.min = { 1e30f, 1e30f };
+		out.max = { -1e30f, -1e30f };
+		for (const auto& contour : contours) {
+			const std::vector<Point> p(contour);
+			for (std::size_t i = 0; i < p.size(); ++i) {
+				out.segments.push_back({ p[i], {}, p[(i + 1) % p.size()], false });
+				out.min = { std::min(out.min.x, p[i].x), std::min(out.min.y, p[i].y) };
+				out.max = { std::max(out.max.x, p[i].x), std::max(out.max.y, p[i].y) };
+			}
+			out.contour_ends.push_back(static_cast<uint32_t>(out.segments.size()));
+		}
+		return out;
+	}
+
+	float coverage_sum(const GlyphBitmap& b)
+	{
+		float sum = 0.0f;
+		for (const uint8_t c : b.coverage) {
+			sum += c / 255.0f;
+		}
+		return sum;
+	}
+
+	// El área exacta de un contorno: la fórmula del cordón de zapato (shoelace) por cada
+	// segmento, y en las curvas, además, 2/3 del triángulo que forman con su control.
+	float outline_area(const Outline& o)
+	{
+		float area = 0.0f;
+		for (const OutlineSegment& s : o.segments) {
+			area += 0.5f * (s.from.x * s.to.y - s.to.x * s.from.y);
+			if (s.is_curve) {
+				const float triangle = 0.5f * ((s.control.x - s.from.x) * (s.to.y - s.from.y)
+					- (s.to.x - s.from.x) * (s.control.y - s.from.y));
+				area += 2.0f / 3.0f * triangle;
+			}
+		}
+		return std::abs(area);
+	}
+
+	void print_bitmap(const GlyphBitmap& b)
+	{
+		const char* ramp = " .:-=+*#%@";
+		for (uint32_t y = 0; y < b.height; ++y) {
+			std::cout << "    ";
+			for (uint32_t x = 0; x < b.width; ++x) {
+				std::cout << ramp[b.at(x, y) * 9 / 255];
+			}
+			std::cout << "\n";
+		}
+	}
+}
+
+// 13. Tu parte, por separado: accumulate_piece.
+static void test_accumulate_piece()
+{
+	std::cout << "[13] accumulate_piece\n";
+	using V = std::vector<float>;
+
+	// Vertical, justo en la frontera entre dos píxeles: tapa enteros los de la derecha.
+	CHECK(all_near(piece(4, 2.0f, 2.0f, 1.0f), V{ 0, 0, 1, 1 }, 1e-5f));
+	// Vertical por la mitad del píxel 1: lo tapa a medias.
+	CHECK(all_near(piece(4, 1.5f, 1.5f, 1.0f), V{ 0, 0.5f, 1, 1 }, 1e-5f));
+	// Solo cruza media fila: todo vale la mitad.
+	CHECK(all_near(piece(4, 1.5f, 1.5f, 0.5f), V{ 0, 0.25f, 0.5f, 0.5f }, 1e-5f));
+	// Si la recta sube, el signo cambia.
+	CHECK(all_near(piece(4, 1.5f, 1.5f, -1.0f), V{ 0, -0.5f, -1, -1 }, 1e-5f));
+	// Inclinada pero dentro de un solo píxel (de x = 1,2 a 1,6): a su derecha, en el
+	// píxel 1, queda un trapecio de 2 - 1,4 = 0,6 (1,4 es la x de su punto medio).
+	CHECK(all_near(piece(4, 1.2f, 1.6f, 1.0f), V{ 0, 0.6f, 1, 1 }, 1e-5f));
+	// Inclinada de x = 0 a x = 2, cruzando la fila entera: del píxel 0 queda a la
+	// derecha del trozo un triángulo (1/4), y del 1, todo menos otro triángulo (3/4).
+	CHECK(all_near(piece(4, 0.0f, 2.0f, 1.0f), V{ 0.25f, 0.75f, 1, 1 }, 1e-5f));
+	// Da igual por dónde entre: de arriba a la izquierda o a la derecha, el área es la misma.
+	CHECK(all_near(piece(6, 0.5f, 4.25f, 1.0f), piece(6, 4.25f, 0.5f, 1.0f), 1e-5f));
+	// En el borde derecho de la fila (x = ancho): usa la casilla de más y no se sale.
+	float total = 0.0f;
+	CHECK(all_near(piece(4, 4.0f, 4.0f, 1.0f, &total), V{ 0, 0, 0, 0 }, 1e-5f) && std::abs(total - 1.0f) < 1e-5f);
+	CHECK(all_near(piece(4, 0.0f, 0.0f, 1.0f), V{ 1, 1, 1, 1 }, 1e-5f));
+
+	// Muchos trozos al azar contra la cuenta a lo bruto. Y lo que se deja en la fila
+	// suma siempre "height" (lo que entra por la izquierda acaba saliendo).
+	std::mt19937 random(1234);
+	std::uniform_real_distribution<float> any_x(0.0f, 8.0f);
+	std::uniform_real_distribution<float> any_height(-1.0f, 1.0f);
+	int wrong = 0;
+	int bad_total = 0;
+	for (int k = 0; k < 500; ++k) {
+		const float a = any_x(random);
+		const float b = k % 5 == 0 ? a : any_x(random);   // algunos verticales
+		const float h = any_height(random);
+		if (!all_near(piece(8, a, b, h, &total), brute_force(8, a, b, h), 2e-3f)) {
+			++wrong;
+		}
+		if (std::abs(total - h) > 1e-4f) {
+			++bad_total;
+		}
+	}
+	CHECK(wrong == 0);
+	CHECK(bad_total == 0);
+	if (wrong != 0 || bad_total != 0) {
+		std::cout << "  (" << wrong << " de 500 distintos de la cuenta a lo bruto, " << bad_total
+				  << " que no suman height)\n";
+	}
+}
+
+// 14. Rasterizar formas conocidas.
+static void test_rasterize_shapes()
+{
+	std::cout << "[14] rasterizar formas conocidas\n";
+
+	// Un cuadrado de 2x2 alineado con los píxeles: 4 píxeles llenos.
+	const GlyphBitmap square = rasterize(polygon({ { { 1, 1 }, { 3, 1 }, { 3, 3 }, { 1, 3 } } }));
+	CHECK(square.left == 1 && square.top == 1 && square.width == 2 && square.height == 2);
+	CHECK(square.coverage == (std::vector<uint8_t>{ 255, 255, 255, 255 }));
+
+	// Desplazado medio píxel: los bordes quedan a medias (128).
+	const GlyphBitmap half = rasterize(polygon({ { { 0.5f, 0 }, { 2.5f, 0 }, { 2.5f, 1 }, { 0.5f, 1 } } }));
+	CHECK(half.width == 3 && half.height == 1);
+	CHECK(half.coverage == (std::vector<uint8_t>{ 128, 255, 128 }));
+	// El mismo, recorrido al revés: da igual el sentido.
+	const GlyphBitmap reversed = rasterize(polygon({ { { 0.5f, 1 }, { 2.5f, 1 }, { 2.5f, 0 }, { 0.5f, 0 } } }));
+	CHECK(reversed.coverage == half.coverage);
+
+	// Un triángulo rectángulo de catetos 4: área 8, y la diagonal parte en dos mitades
+	// los píxeles que cruza.
+	const GlyphBitmap triangle = rasterize(polygon({ { { 0, 0 }, { 4, 0 }, { 0, 4 } } }));
+	CHECK(std::abs(coverage_sum(triangle) - 8.0f) < 0.05f);
+	CHECK(triangle.at(0, 0) == 255 && triangle.at(3, 0) == 128 && triangle.at(0, 3) == 128 && triangle.at(3, 3) == 0);
+
+	// Dos cuadrados del mismo sentido que se pisan: non-zero, la zona común no "se
+	// pasa" de 255 ni se vacía. Área de la unión: 4 + 4 - 1 = 7.
+	const GlyphBitmap overlap = rasterize(polygon({ { { 0, 0 }, { 2, 0 }, { 2, 2 }, { 0, 2 } },
+												  { { 1, 1 }, { 3, 1 }, { 3, 3 }, { 1, 3 } } }));
+	CHECK(overlap.at(1, 1) == 255 && overlap.at(2, 0) == 0);
+	CHECK(std::abs(coverage_sum(overlap) - 7.0f) < 0.01f);
+
+	// Un marco: el cuadrado de dentro va al revés, así que es un agujero (como la "o").
+	const GlyphBitmap frame = rasterize(polygon({ { { 0, 0 }, { 4, 0 }, { 4, 4 }, { 0, 4 } },
+												{ { 1, 1 }, { 1, 3 }, { 3, 3 }, { 3, 1 } } }));
+	CHECK(frame.at(0, 0) == 255 && frame.at(1, 1) == 0 && frame.at(2, 2) == 0 && frame.at(3, 3) == 255);
+
+	CHECK(rasterize(Outline{}).empty());
+}
+
+// 15. Letras de verdad.
+static void test_rasterize_glyphs()
+{
+	std::cout << "[15] rasterizar Segoe UI negrita\n";
+	const auto data = load_system_font("segoeuib.ttf");
+	if (!data) {
+		return;
+	}
+	const Font font(*data);
+
+	// La "l" a 48 px va de x = 3,117 a 10,523 y de y = -35,53 a 0.
+	const GlyphBitmap l = rasterize(font.outline(font.glyph_index(U'l'), 48.0f));
+	CHECK(l.left == 3 && l.top == -36 && l.width == 8 && l.height == 36);
+	if (l.width == 8 && l.height == 36) {
+		CHECK(std::abs(l.at(0, 20) - 225) <= 1);   // el píxel x = 3, tapado al 88 %
+		CHECK(l.at(3, 20) == 255 && l.at(3, 35) == 255);
+		CHECK(std::abs(l.at(7, 20) - 133) <= 1);   // el píxel x = 10, al 52 %
+	}
+
+	// La "o" tiene un agujero en medio.
+	const GlyphBitmap o = rasterize(font.outline(font.glyph_index(U'o'), 48.0f));
+	CHECK(!o.empty() && o.at(o.width / 2, o.height / 2) == 0);
+
+	// Lo que suma la cobertura es el área de la letra (con las curvas exactas).
+	for (const char32_t c : std::u32string(U"loBgñae8")) {
+		const Outline outline = font.outline(font.glyph_index(c), 48.0f);
+		const float expected = outline_area(outline);
+		const float got = coverage_sum(rasterize(outline));
+		if (std::abs(got - expected) > 0.005f * expected) {
+			CHECK(std::abs(got - expected) <= 0.005f * expected);
+			std::cout << "  (U+" << std::hex << static_cast<uint32_t>(c) << std::dec << ": área " << expected
+					  << ", cobertura " << got << ")\n";
+		}
+	}
+
+	// Todos los glifos a 24 px: ninguno se rompe y cada imagen mide lo que su caja.
+	int broken = 0;
+	const auto start = std::chrono::steady_clock::now();
+	for (uint32_t g = 0; g < font.glyph_count(); ++g) {
+		try {
+			const GlyphBitmap b = rasterize(font.outline(static_cast<uint16_t>(g), 24.0f));
+			if (b.coverage.size() != static_cast<std::size_t>(b.width) * b.height) {
+				++broken;
+			}
+		}
+		catch (const std::exception&) {
+			++broken;
+		}
+	}
+	const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+	CHECK(broken == 0);
+	std::cout << "  (" << font.glyph_count() << " glifos a 24 px en " << ms << " ms)\n";
+
+	// Y para verla: la "g" a 20 px.
+	print_bitmap(rasterize(font.outline(font.glyph_index(U'g'), 20.0f)));
+}
+
 // Cada caso por separado: si uno lanza una excepción que no esperaba, cuenta como
 // fallo y siguen los demás (sin esto, el programa se cae con abort()).
 static void run(void (*test)())
@@ -553,6 +820,9 @@ int main()
 	run(test_components);
 	run(test_handmade_glyf);
 	run(test_implicit_points);
+	run(test_accumulate_piece);
+	run(test_rasterize_shapes);
+	run(test_rasterize_glyphs);
 
 	std::cout << (g_failures == 0 ? "\nTODO OK\n" : "\nHAY FALLOS\n");
 	return g_failures == 0 ? 0 : 1;

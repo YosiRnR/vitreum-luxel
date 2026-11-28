@@ -9,6 +9,7 @@ project(luxel_ttf LANGUAGES CXX)
 add_library(luxel_ttf STATIC
     "include/luxel/ttf/font.h"
     "include/luxel/ttf/outline.h"
+    "include/luxel/ttf/raster.h"
     "src/reader.h"
     "src/tables.h"
     "src/tables.cpp"
@@ -20,6 +21,9 @@ add_library(luxel_ttf STATIC
     "src/glyf_component.cpp"
     "src/outline_builder.h"
     "src/outline_builder.cpp"
+    "src/rasterizer.h"
+    "src/rasterizer.cpp"
+    "src/coverage_piece.cpp"
     "src/font.cpp"
 )
 
