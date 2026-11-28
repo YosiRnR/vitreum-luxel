@@ -641,7 +641,32 @@ Este proyecto es para APRENDER, no para conseguir código rápido. Eres mi tutor
   `f2dot14` y `append_component`; 11: `glyf` hecho a mano, con escala, autorreferencia
   y enganche por puntos; 12: puntos implícitos); `main` envuelve cada caso en `run()`
   (una excepción inesperada cuenta como fallo y no aborta).
-- Siguiente: T4 de `docs/ttf-design.md` (rasterizador con cobertura exacta por área).
+- Hecho (T4, rasterizador con cobertura exacta): pública en
+  `include/luxel/ttf/raster.h`: `GlyphBitmap` (`width`, `height`, `left`/`top` = dónde
+  cae su píxel (0,0) respecto al lápiz, +Y abajo; `coverage` de un byte por píxel,
+  `at(x, y)`) y `rasterize(const Outline&)` (caja = floor/ceil de la del contorno;
+  vacío si no hay segmentos). `src/rasterizer.*` (`detail::Rasterizer`): buffer de
+  "cambios de cobertura" en float, una fila de `width + 2` casillas (la de más
+  recibe lo que sobra por la derecha); `draw_line` parte la recta en un trozo por fila
+  (recorre hacia abajo, signo + si baja, - si sube; x con tope en [0, ancho]);
+  `draw_quadratic` aplana con n = ceil(sqrt(flecha / 0,02)) rectas (flecha =
+  |from - 2 control + to| / 4; máx. 256; el último punto exacto); `coverage()` = suma
+  por fila, valor absoluto (non-zero: el sentido da igual y los agujeros restan) y
+  tope en 1, a bytes con redondeo. `src/coverage_piece.cpp`, escrito por el usuario
+  dibujando los casos en papel: `accumulate_piece(row, x_top, x_bottom, height)` deja
+  en cada píxel tocado la diferencia de "parte del píxel a la derecha del trozo"
+  (casos geométricos: vertical, trapecio, triángulos de esquina y trapecio entre los
+  lados) y lo que falta hasta `height` en la casilla siguiente; solo recorre de
+  floor(x mínima) a floor(x máxima). Trampas vistas: `+=`, no `=` (varios trozos
+  dejan cambios en la misma fila) y, al acortar el bucle, no perder el resto de la
+  última casilla. `test_ttf`: 15 casos (13: escenarios sueltos y 500 trozos al azar
+  contra una cuenta a lo bruto, la fila suma `height`; 14: cuadrados, medio píxel =
+  128, triángulo de área 8, non-zero con dos cuadrados que se pisan y marco con
+  agujero; 15: la 'l' de Segoe a 48 px píxel a píxel, cobertura total de "loBgñae8"
+  contra el área exacta del contorno (cordón de zapato + 2/3 del triángulo de cada
+  curva) al 0,5 %, los 5.321 glifos a 24 px (~290 ms en Debug) y la 'g' en ASCII).
+- Siguiente: T5 de `docs/ttf-design.md` (atlas por estantes, modo por glifo de
+  `BitmapFont` y `test_1` con la fuente propia).
   Aparcado: R5 (3D) y más widgets (casillas, deslizadores, menús...) cuando los
   pida el editor.
 - Entorno de compilación (para el asistente): desde Git Bash, cargar
